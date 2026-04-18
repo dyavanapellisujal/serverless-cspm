@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from pymongo import MongoClient
 from bson.objectid import ObjectId
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
 import random
@@ -120,12 +120,27 @@ def get_finding_by_id(finding_id):
     
     try:
         finding = collection.find_one({"_id": ObjectId(finding_id)})
+        is_deleted = False
+        
         if not finding:
-            return jsonify({"error": "Finding not found"}), 404
+            # Check deleted logs
+            db = client[DATABASE_NAME]
+            logs_collection = db['s3_audit_logs']
+            finding_log = logs_collection.find_one({"_id": ObjectId(finding_id)})
+            if finding_log:
+                # The log is an array of findings under 'findings', or sometimes it's grouped.
+                # Oh wait, the log itself is saved directly!
+                finding = finding_log
+                is_deleted = True
+            else:
+                return jsonify({"error": "Finding not found"}), 404
         
         finding['_id'] = str(finding['_id'])
+        finding['is_archived_log'] = is_deleted
         if 'timestamp' in finding and isinstance(finding['timestamp'], datetime):
             finding['timestamp'] = finding['timestamp'].isoformat()
+        if 'deleted_at' in finding and isinstance(finding['deleted_at'], datetime):
+            finding['deleted_at'] = finding['deleted_at'].isoformat()
         
         return jsonify(finding)
         
@@ -273,246 +288,114 @@ def get_findings_timeline():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/populate-sample-data', methods=['POST'])
-def populate_sample_data():
-    """Populate database with sample AWS security findings"""
-    if collection is None:
+@app.route('/api/logs', methods=['GET', 'DELETE'])
+def logs_api():
+    """Get or Clear audit logs (deleted buckets/resources)"""
+    if client is None:
         return jsonify({"error": "Database not connected"}), 500
     
     try:
+        db = client[DATABASE_NAME]
+        logs_collection = db['s3_audit_logs']
         
-        # Sample data generation
-        aws_accounts = ['123456789012', '987654321098', '456789123456']
-        regions = ['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1']
-        bucket_names = [
-            'company-data-backup', 'user-uploads-prod', 'analytics-logs',
-            'static-website-assets', 'database-backups', 'application-logs',
-            'media-files-storage', 'config-files-bucket', 'temp-processing-data'
-        ]
-        
-        findings = []
-        
-        # Generate S3 ACL enabled findings
-        for i in range(5):
-            bucket_name = random.choice(bucket_names) + f"-{random.randint(100, 999)}"
-            account_id = random.choice(aws_accounts)
-            region = random.choice(regions)
+        if request.method == 'DELETE':
+            logs_collection.delete_many({})
+            return jsonify({"message": "Logs cleared successfully"})
             
-            finding = {
-                "finding_id": f"s3-acl-{random.randint(10000, 99999)}",
-                "title": "S3 Bucket ACLs Enabled",
-                "description": f"S3 bucket '{bucket_name}' has Access Control Lists (ACLs) enabled, which may allow unintended access permissions.",
-                "severity": random.choice(["Medium", "High"]),
-                "service": "S3",
-                "resource_id": f"arn:aws:s3:::{bucket_name}",
-                "resource_name": bucket_name,
-                "account_id": account_id,
-                "region": region,
-                "status": random.choice(["Open", "In Progress", "Resolved"]),
-                "compliance_standards": ["AWS Config", "CIS AWS Foundations"],
-                "remediation": {
-                    "description": "Disable S3 bucket ACLs and use bucket policies for access control",
-                    "steps": [
-                        "Navigate to S3 console",
-                        f"Select bucket '{bucket_name}'",
-                        "Go to Permissions tab",
-                        "Edit Object Ownership settings",
-                        "Select 'Bucket owner enforced' to disable ACLs",
-                        "Review and update bucket policies as needed"
-                    ],
-                    "aws_cli_command": f"aws s3api put-bucket-ownership-controls --bucket {bucket_name} --ownership-controls Rules=[{{ObjectOwnership=BucketOwnerEnforced}}]"
-                },
-                "risk_score": random.randint(60, 85),
-                "first_detected": (datetime.utcnow() - timedelta(days=random.randint(1, 30))).isoformat(),
-                "last_updated": (datetime.utcnow() - timedelta(hours=random.randint(1, 24))).isoformat(),
-                "tags": {
-                    "Environment": random.choice(["Production", "Staging", "Development"]),
-                    "Team": random.choice(["DevOps", "Security", "Data"]),
-                    "CostCenter": f"CC-{random.randint(1000, 9999)}"
-                },
-                "metadata": {
-                    "scan_type": "Configuration Assessment",
-                    "scanner": "AWS Config",
-                    "rule_name": "s3-bucket-acl-prohibited",
-                    "finding_type": "Security"
-                }
-            }
-            findings.append(finding)
+        # GET method logic
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
         
-        # Generate S3 public access enabled findings
-        for i in range(6):
-            bucket_name = random.choice(bucket_names) + f"-{random.randint(100, 999)}"
-            account_id = random.choice(aws_accounts)
-            region = random.choice(regions)
-            
-            public_access_types = [
-                "Block Public ACLs: False",
-                "Ignore Public ACLs: False", 
-                "Block Public Policy: False",
-                "Restrict Public Buckets: False"
-            ]
-            
-            finding = {
-                "finding_id": f"s3-public-{random.randint(10000, 99999)}",
-                "title": "S3 Bucket Public Access Enabled",
-                "description": f"S3 bucket '{bucket_name}' has public access settings enabled, potentially exposing data to unauthorized users.",
-                "severity": random.choice(["High", "Critical"]),
-                "service": "S3",
-                "resource_id": f"arn:aws:s3:::{bucket_name}",
-                "resource_name": bucket_name,
-                "account_id": account_id,
-                "region": region,
-                "status": random.choice(["Open", "In Progress"]),
-                "compliance_standards": ["AWS Config", "CIS AWS Foundations", "PCI DSS"],
-                "remediation": {
-                    "description": "Block all public access to the S3 bucket",
-                    "steps": [
-                        "Navigate to S3 console",
-                        f"Select bucket '{bucket_name}'",
-                        "Go to Permissions tab",
-                        "Click 'Edit' on Block public access settings",
-                        "Check all four options to block public access",
-                        "Save changes and confirm"
-                    ],
-                    "aws_cli_command": f"aws s3api put-public-access-block --bucket {bucket_name} --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
-                },
-                "risk_score": random.randint(80, 95),
-                "first_detected": (datetime.utcnow() - timedelta(days=random.randint(1, 45))).isoformat(),
-                "last_updated": (datetime.utcnow() - timedelta(hours=random.randint(1, 12))).isoformat(),
-                "details": {
-                    "public_access_settings": random.choice(public_access_types),
-                    "bucket_policy": "Present" if random.choice([True, False]) else "None",
-                    "website_hosting": "Enabled" if random.choice([True, False]) else "Disabled"
-                },
-                "tags": {
-                    "Environment": random.choice(["Production", "Staging", "Development"]),
-                    "Team": random.choice(["DevOps", "Security", "Data", "Frontend"]),
-                    "CostCenter": f"CC-{random.randint(1000, 9999)}",
-                    "Criticality": "High"
-                },
-                "metadata": {
-                    "scan_type": "Configuration Assessment",
-                    "scanner": "AWS Config",
-                    "rule_name": "s3-bucket-public-access-prohibited",
-                    "finding_type": "Security"
-                }
-            }
-            findings.append(finding)
+        # Calculate skip value
+        skip = (page - 1) * limit
         
-        # Add additional findings
-        additional_findings = [
-            {
-                "finding_id": f"s3-encryption-{random.randint(10000, 99999)}",
-                "title": "S3 Bucket Encryption Not Enabled",
-                "description": f"S3 bucket 'logs-bucket-{random.randint(100, 999)}' does not have server-side encryption enabled.",
-                "severity": "Medium",
-                "service": "S3",
-                "resource_id": f"arn:aws:s3:::logs-bucket-{random.randint(100, 999)}",
-                "resource_name": f"logs-bucket-{random.randint(100, 999)}",
-                "account_id": random.choice(aws_accounts),
-                "region": random.choice(regions),
-                "status": "Open",
-                "compliance_standards": ["AWS Config", "SOC 2"],
-                "risk_score": random.randint(50, 70),
-                "first_detected": (datetime.utcnow() - timedelta(days=random.randint(5, 20))).isoformat(),
-                "last_updated": (datetime.utcnow() - timedelta(hours=random.randint(6, 48))).isoformat(),
-                "tags": {
-                    "Environment": "Production",
-                    "Team": "Security",
-                    "CostCenter": f"CC-{random.randint(1000, 9999)}"
-                },
-                "metadata": {
-                    "scan_type": "Configuration Assessment",
-                    "scanner": "AWS Config",
-                    "rule_name": "s3-bucket-server-side-encryption-enabled",
-                    "finding_type": "Security"
-                }
-            },
-            {
-                "finding_id": f"s3-versioning-{random.randint(10000, 99999)}",
-                "title": "S3 Bucket Versioning Not Enabled",
-                "description": f"S3 bucket 'backup-storage-{random.randint(100, 999)}' does not have versioning enabled.",
-                "severity": "Low",
-                "service": "S3",
-                "resource_id": f"arn:aws:s3:::backup-storage-{random.randint(100, 999)}",
-                "resource_name": f"backup-storage-{random.randint(100, 999)}",
-                "account_id": random.choice(aws_accounts),
-                "region": random.choice(regions),
-                "status": "Resolved",
-                "compliance_standards": ["AWS Config"],
-                "risk_score": random.randint(30, 50),
-                "first_detected": (datetime.utcnow() - timedelta(days=random.randint(10, 60))).isoformat(),
-                "last_updated": (datetime.utcnow() - timedelta(days=random.randint(1, 5))).isoformat(),
-                "tags": {
-                    "Environment": "Production",
-                    "Team": "Data",
-                    "CostCenter": f"CC-{random.randint(1000, 9999)}"
-                },
-                "metadata": {
-                    "scan_type": "Configuration Assessment",
-                    "scanner": "AWS Config",
-                    "rule_name": "s3-bucket-versioning-enabled",
-                    "finding_type": "Security"
-                }
-            }
-        ]
+        # Get total count
+        total_count = logs_collection.count_documents({})
         
-        findings.extend(additional_findings)
+        # Get logs
+        logs = list(logs_collection.find({})
+                   .sort('deleted_at', -1)
+                   .skip(skip)
+                   .limit(limit))
         
-        # --- Generate KMS Findings ---
-        for i in range(5):
-            findings.append({
-                "finding_id": f"kms-rot-{random.randint(10000, 99999)}",
-                "title": "KMS Key Rotation Not Enabled",
-                "description": "Automatic key rotation is not enabled for a customer managed key.",
-                "severity": random.choice(["Medium", "High"]),
-                "service": "KMS",
-                "resource_id": f"arn:aws:kms:us-east-1:123456789012:key/{random.randint(100000, 999999)}",
-                "resource_name": f"app-data-key-{random.randint(1, 10)}",
-                "account_id": random.choice(aws_accounts),
-                "region": random.choice(regions),
-                "status": random.choice(["Open", "In Progress", "Resolved"]),
-                "compliance_standards": ["CIS AWS Foundations"],
-                "risk_score": random.randint(50, 70),
-                "first_detected": (datetime.utcnow() - timedelta(days=random.randint(5, 30))).isoformat(),
-                "last_updated": datetime.utcnow().isoformat(),
-                "metadata": {"scan_type": "Key Management Audit", "scanner": "AWS Config"}
-            })
-        
-        # Clear existing data and insert new findings
-        collection.delete_many({})
-        result = collection.insert_many(findings)
-        
-        # Get summary statistics
-        total_count = len(result.inserted_ids)
-        severity_counts = {}
-        service_counts = {}
-        status_counts = {}
-        
-        for finding in findings:
-            severity = finding.get('severity', 'Unknown')
-            service = finding.get('service', 'Unknown')
-            status = finding.get('status', 'Unknown')
-            
-            severity_counts[severity] = severity_counts.get(severity, 0) + 1
-            service_counts[service] = service_counts.get(service, 0) + 1
-            status_counts[status] = status_counts.get(status, 0) + 1
+        # Format logs robustly to prevent ObjectId JSON serialization errors
+        def sanitize_mongo_fields(data):
+            if isinstance(data, dict):
+                return {k: sanitize_mongo_fields(v) for k, v in data.items()}
+            elif isinstance(data, list):
+                return [sanitize_mongo_fields(i) for i in data]
+            elif isinstance(data, ObjectId):
+                return str(data)
+            elif isinstance(data, datetime):
+                return data.isoformat()
+            return data
+
+        sanitized_logs = sanitize_mongo_fields(logs)
         
         return jsonify({
-            "success": True,
-            "message": f"Successfully populated {total_count} sample findings",
-            "summary": {
-                "total_findings": total_count,
-                "by_severity": severity_counts,
-                "by_service": service_counts,
-                "by_status": status_counts
+            "logs": sanitized_logs,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total_count,
+                "pages": (total_count + limit - 1) // limit
             }
         })
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
+@app.route('/api/logs/latest', methods=['GET'])
+def get_latest_logs():
+    """Get latest deleted bucket logs for notifications"""
+    if client is None:
+        return jsonify({"error": "Database not connected"}), 500
+    
+    try:
+        db = client[DATABASE_NAME]
+        logs_collection = db['s3_audit_logs']
+        
+        # Get logs from last 30 seconds (or provided seconds)
+        seconds = int(request.args.get('seconds', 30))
+        time_threshold = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+        
+        logs = list(logs_collection.find({
+            'deleted_at': {'$gte': time_threshold}
+        }).sort('deleted_at', -1))
+        
+        # Format logs
+        formatted_logs = []
+        # Group by bucket name to avoid spamming multiple findings for same bucket deletion
+        bucket_groups = {}
+        
+        for log in logs:
+            bucket = log.get('bucket_name')
+            if bucket not in bucket_groups:
+                bucket_groups[bucket] = []
+            bucket_groups[bucket].append(log)
+            
+        # Return summary per bucket
+        for bucket, findings in bucket_groups.items():
+            first_finding = findings[0]
+            formatted_logs.append({
+                'bucket_name': bucket,
+                'deleted_at': first_finding.get('deleted_at').isoformat() if isinstance(first_finding.get('deleted_at'), datetime) else first_finding.get('deleted_at'),
+                'finding_count': len(findings),
+                'findings': [{
+                    'title': f.get('title'),
+                    'severity': f.get('severity'),
+                    'description': f.get('description'),
+                    'remediation': f.get('remediation') # For the report
+                } for f in findings]
+            })
+            
+        return jsonify({
+            "logs": formatted_logs,
+            "count": len(formatted_logs)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

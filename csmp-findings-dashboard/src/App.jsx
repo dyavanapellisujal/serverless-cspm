@@ -78,7 +78,7 @@ function App() {
               <Route path="/findings" element={<Findings />} />
               <Route path="/critical" element={<CriticalIssues />} />
               <Route path="/reports" element={<Reports />} />
-              <Route path="/resources" element={<Box sx={{ p: 3 }}><h3>Cloud Resources Inventory (Coming Soon)</h3></Box>} />
+
               <Route path="/finding/:id" element={<FindingDetail />} />
             </Routes>
           </Box>

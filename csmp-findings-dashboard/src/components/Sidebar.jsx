@@ -15,7 +15,7 @@ import SecurityIcon from '@mui/icons-material/Security';
 import WarningIcon from '@mui/icons-material/Warning';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import SettingsIcon from '@mui/icons-material/Settings';
-import CloudIcon from '@mui/icons-material/CloudQueue';
+
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const drawerWidth = 240;
@@ -25,7 +25,7 @@ const menuItems = [
   { text: 'All Findings', icon: <SecurityIcon />, path: '/findings' },
   { text: 'Critical Issues', icon: <WarningIcon />, path: '/critical' },
   { text: 'Reports', icon: <AssessmentIcon />, path: '/reports' },
-  { text: 'Cloud Resources', icon: <CloudIcon />, path: '/resources' },
+
 ];
 
 const Sidebar = () => {

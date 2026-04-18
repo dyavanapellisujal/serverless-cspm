@@ -95,8 +95,8 @@ def parse_opa_response(response_data: Dict[str, Any]) -> Optional[Dict[str, str]
         risk = "Critical"
     
     if risk == "Public":
-        print("[INFO] Bucket is public, no finding will be generated as per policy.")
-        return None
+        print("[INFO] Bucket is public, escalated to CRITICAL finding.")
+        risk = "Critical"
         
     return {
         "risk_level": risk,

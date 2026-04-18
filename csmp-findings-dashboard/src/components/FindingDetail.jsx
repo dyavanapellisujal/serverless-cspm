@@ -37,6 +37,26 @@ import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+const formatISTDate = (dateVal) => {
+    if (!dateVal) return 'N/A';
+    try {
+        let dateStr = String(dateVal);
+        if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+            dateStr += 'Z';
+        }
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 'Invalid Date';
+        // Force IST interpretation
+        return d.toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        }).toUpperCase() + ' IST';
+    } catch (e) {
+        return 'Invalid Date';
+    }
+};
+
 const FindingDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -269,7 +289,8 @@ const FindingDetail = () => {
               </Box>
 
               <Typography variant="body1" paragraph>
-                {finding.description}
+                <strong>Security Alert:</strong> {finding.description} <br /><br />
+                <em>Note: This configuration was detected in near real-time. Unrestricted or misconfigured access policies expose your infrastructure to severe risks including data exfiltration, unauthorized privilege escalation, or unauthorized network ingress.</em>
               </Typography>
 
               <Divider sx={{ my: 2 }} />
@@ -280,7 +301,7 @@ const FindingDetail = () => {
                     Resource ID
                   </Typography>
                   <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                    {finding.resource_id}
+                    {finding.resource_name || finding.bucket_name || finding.resource_id}
                   </Typography>
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -304,9 +325,19 @@ const FindingDetail = () => {
                     Detected At
                   </Typography>
                   <Typography variant="body2">
-                    {new Date(finding.timestamp).toLocaleString()}
+                    {formatISTDate(finding.timestamp || finding.deleted_at)}
                   </Typography>
                 </Grid>
+                {finding.is_archived_log && finding.deleted_at && (
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="subtitle2" color="error">
+                      Deletion / Remediation Time
+                    </Typography>
+                    <Typography variant="body2" color="error">
+                      {formatISTDate(finding.deleted_at)}
+                    </Typography>
+                  </Grid>
+                )}
               </Grid>
 
               {finding.details && (
@@ -382,6 +413,7 @@ const FindingDetail = () => {
                   variant="outlined"
                   startIcon={<AssignmentIcon />}
                   fullWidth
+                  onClick={() => navigate(`/reports?finding_id=${id}`)}
                 >
                   Generate Report
                 </Button>

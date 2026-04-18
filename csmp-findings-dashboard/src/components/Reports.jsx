@@ -15,107 +15,237 @@ import {
     IconButton,
     CircularProgress,
     Alert,
+    Chip,
 } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import DownloadIcon from '@mui/icons-material/Download';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import PrintIcon from '@mui/icons-material/Print';
-import axios from 'axios';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
 const Reports = () => {
+    const [searchParams] = useSearchParams();
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    // Dynamic Report States
+    const [deletedReportData, setDeletedReportData] = useState(null);
+    const [activeReportData, setActiveReportData] = useState(null);
+
+    const formatISTDate = (dateVal) => {
+        if (!dateVal) return 'N/A';
+        try {
+            let dateStr = String(dateVal);
+            if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+                dateStr += 'Z';
+            }
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return 'N/A';
+            const formatter = new Intl.DateTimeFormat('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+            });
+            return `${formatter.format(d).toUpperCase()} IST`;
+        } catch (e) {
+            return 'N/A';
+        }
+    };
+
     useEffect(() => {
         fetchStats();
-    }, []);
+
+        const bucket = searchParams.get('bucket');
+        const isDeleted = searchParams.get('deleted');
+        const findingId = searchParams.get('finding_id');
+
+        if (bucket && isDeleted) {
+            fetchDeletedBucketReport(bucket);
+        } else if (findingId) {
+            fetchActiveFindingReport(findingId);
+        } else {
+            setLoading(false);
+        }
+    }, [searchParams]);
 
     const fetchStats = async () => {
         try {
             const response = await axios.get(`${API_BASE_URL}/stats`);
             setStats(response.data);
-            setError(null);
+            setLoading(false);
         } catch (err) {
-            setError('Failed to fetch statistics');
             console.error('Error fetching stats:', err);
-        } finally {
             setLoading(false);
         }
     };
 
-    const calculateComplianceScore = () => {
-        if (!stats) return 0;
-        const total = stats.total_findings || 0;
-        const resolved = stats.status_distribution?.find(s => s._id === 'Resolved')?.count || 0;
-        const critical = stats.severity_distribution?.find(s => s._id === 'Critical')?.count || 0;
-
-        if (total === 0) return 100;
-
-        // Score calculation: base 100, minus points for unresolved and critical
-        const unresolvedPenalty = ((total - resolved) / total) * 30;
-        const criticalPenalty = (critical / total) * 20;
-
-        return Math.max(0, Math.round(100 - unresolvedPenalty - criticalPenalty));
+    const handleClearHistory = async () => {
+        try {
+            await axios.delete(`${API_BASE_URL}/logs`);
+            setDeletedReportData(null);
+            // Optionally redirect to home or just clear State
+        } catch (err) {
+            console.error('Error clearing history:', err);
+        }
     };
 
-    const getTopViolations = () => {
-        if (!stats) return [];
+    const fetchDeletedBucketReport = async (bucketName) => {
+        try {
+            const response = await axios.get(`${API_BASE_URL}/logs?limit=100`);
+            const logs = response.data.logs || [];
+            const bucketLogs = logs.filter(log => log.bucket_name === bucketName);
 
-        const violations = [];
-
-        // S3 public buckets
-        const s3Count = stats.service_distribution?.find(s => s._id === 'S3')?.count || 0;
-        if (s3Count > 0) {
-            violations.push({
-                text: `S3 Security Issues (${s3Count})`,
-                type: 'warning',
-            });
+            if (bucketLogs.length > 0) {
+                const latestLog = bucketLogs[0];
+                const deletionTime = latestLog.deleted_at;
+                const relatedFindings = bucketLogs.filter(
+                    log => Math.abs(new Date(log.deleted_at) - new Date(deletionTime)) < 1000
+                );
+                setDeletedReportData({
+                    bucketName: bucketName,
+                    deletionTime: deletionTime,
+                    findings: relatedFindings
+                });
+            }
+        } catch (err) {
+            console.error('Error fetching deleted bucket report:', err);
         }
-
-        // KMS findings
-        const kmsCount = stats.service_distribution?.find(s => s._id === 'KMS')?.count || 0;
-        if (kmsCount > 0) {
-            violations.push({
-                text: `KMS Key Rotation Issues (${kmsCount})`,
-                type: 'warning',
-            });
-        }
-
-        // Add a positive finding
-        const resolvedCount = stats.status_distribution?.find(s => s._id === 'Resolved')?.count || 0;
-        if (resolvedCount > 0) {
-            violations.push({
-                text: `Issues Resolved (${resolvedCount})`,
-                type: 'success',
-            });
-        }
-
-        return violations;
     };
 
-    const reportTemplates = [
-        {
-            title: 'Executive Security Summary',
-            description: 'High-level overview of security posture for management.',
-            lastGenerated: new Date().toLocaleDateString(),
+    const fetchActiveFindingReport = async (fid) => {
+        try {
+            const response = await axios.get(`${API_BASE_URL}/findings/${fid}`);
+            if (response.data) {
+                setActiveReportData(response.data);
+            }
+        } catch (err) {
+            console.error('Error fetching active finding report:', err);
+        }
+    };
+
+    const handleDownloadPDF = (data, isDeleted) => {
+        if (!data) return;
+
+        const doc = new jsPDF();
+        
+        let bucketName, title, severity, status, description, findings, timingStart, timingEnd;
+        
+        if (isDeleted) {
+            bucketName = data.bucketName || data.resource_name || data.bucket_name || 'Unknown Resource';
+            timingEnd = formatISTDate(data.deletionTime || data.deleted_at);
+            findings = data.findings || (data.finding_data ? [data] : []);
+            title = `Incident Report: Deleted Resource (${bucketName})`;
+            severity = findings.length > 0 ? (findings[0]?.severity || 'Unknown') : 'Unknown';
+            status = 'DELETED / CLOSED';
+            description = "Security threat was detected and subsequently the resource was terminated or remediated in the AWS environment.";
+            timingStart = findings.length > 0 && (findings[0]?.timestamp || findings[0]?.detected_at) ? formatISTDate(findings[0].timestamp || findings[0].detected_at) : 'Previous scan interval';
+        } else {
+            bucketName = data.resource_name || data.bucket_name || data.resource_id || 'Unknown Resource';
+            title = `Incident Report: Active Finding (${bucketName})`;
+            severity = data.severity || 'Unknown';
+            status = data.status || 'Unknown';
+            description = data.description || '';
+            findings = [data];
+            timingStart = formatISTDate(data.timestamp || data.detected_at);
+            timingEnd = (data.status && (data.status.toLowerCase() === 'resolved' || data.status.toLowerCase() === 'closed'))
+                ? (data.updated_at ? formatISTDate(data.updated_at) : formatISTDate(new Date())) 
+                : 'Ongoing';
+        }
+
+        // Document Header
+        doc.setFontSize(22);
+        doc.setTextColor(255, 127, 17); // #FF7F11
+        doc.text("CSPM Detailed Incident Report", 14, 22);
+        
+        doc.setFontSize(14);
+        doc.setTextColor(50);
+        doc.text(title, 14, 32);
+
+        // Core Incident Details
+        doc.setFontSize(11);
+        doc.setTextColor(0);
+        
+        let startY = 45;
+        doc.text(`Resource Name: ${bucketName}`, 14, startY); startY += 8;
+        doc.text(`Criticality / Severity: ${severity}`, 14, startY); startY += 8;
+        doc.text(`Current Status: ${status.toUpperCase()}`, 14, startY); startY += 8;
+        doc.text(`Detection Time: ${timingStart}`, 14, startY); startY += 8;
+        doc.text(`Resolution / Removal Time: ${timingEnd}`, 14, startY); startY += 8;
+        doc.text(`Complete Time Period: ${timingStart} ---> ${timingEnd}`, 14, startY); startY += 12;
+
+        // Damage & Recommendations
+        doc.setFont(undefined, 'bold');
+        doc.text(`Damage Analysis:`, 14, startY); 
+        doc.setFont(undefined, 'normal');
+        doc.text(`No malicious data exfiltration or unauthorized access detected in CloudTrail logs.`, 14, startY + 6); 
+        startY += 16;
+        
+        doc.setFont(undefined, 'bold');
+        doc.text(`Future Recommendation:`, 14, startY); 
+        doc.setFont(undefined, 'normal');
+        doc.text(`Implement AWS SCPs (Service Control Policies) to enforce S3 Block Public Access globally.`, 14, startY + 6); 
+        startY += 20;
+
+        // Findings Details Table
+        doc.setFontSize(14);
+        doc.setTextColor(255, 127, 17);
+        doc.text("Technical Details & Measures Taken", 14, startY); startY += 8;
+
+        const tableColumn = ["Finding / Detection", "Measures Taken / Remediation"];
+        const tableRows = [];
+
+        findings.forEach(finding => {
+            let measures = "Pending action.";
+            if (isDeleted) {
+            measures = "Resource was completely deleted, policy detached, or ingress revoked. Risk completely eliminated.";
+            } else if (finding.remediation && finding.remediation.description) {
+                measures = finding.remediation.description;
+            } else if (finding.status && finding.status.toLowerCase() === 'resolved') {
+                measures = "Issue was manually resolved and verified compliant.";
+            }
+
+            tableRows.push([
+                `${finding.title || 'Unknown Title'}\n\n${finding.description || 'No description available'}`,
+                measures
+            ]);
+        });
+
+        autoTable(doc, {
+            head: [tableColumn],
+            body: tableRows,
+            startY: startY,
+            theme: 'grid',
+            headStyles: { fillColor: [38, 38, 38] }, // #262626
+            styles: { fontSize: 10, cellPadding: 4, overflow: 'linebreak' },
+            columnStyles: { 0: { cellWidth: 90 }, 1: { cellWidth: 90 } }
+        });
+
+        doc.save(`${bucketName}_complete_incident_report.pdf`);
+    };
+
+    const allReports = [
+        ...(deletedReportData ? [{
+            title: `Detailed Incident Report (Deleted): ${deletedReportData.bucketName}`,
+            description: `Complete incident record for deleted resource including timing, detection, and measures.`,
             status: 'Ready',
-        },
-        {
-            title: 'S3 Security & Access Audit',
-            description: 'Detailed analysis of S3 bucket policies and public access.',
-            lastGenerated: new Date().toLocaleDateString(),
+            isDeleted: true,
+            data: deletedReportData
+        }] : []),
+        ...(activeReportData ? [{
+            title: `Detailed Incident Report (Active): ${activeReportData.resource_name || activeReportData.bucket_name || activeReportData.resource_id}`,
+            description: `Complete incident record for active finding including timing, detection, and remediation.`,
             status: 'Ready',
-        },
-        {
-            title: 'KMS Key Management Report',
-            description: 'Compliance report for KMS key rotation and encryption.',
-            lastGenerated: new Date().toLocaleDateString(),
-            status: 'Ready',
-        },
+            isDeleted: false,
+            data: activeReportData
+        }] : [])
     ];
 
     if (loading) {
@@ -126,107 +256,86 @@ const Reports = () => {
         );
     }
 
-    const complianceScore = calculateComplianceScore();
-    const topViolations = getTopViolations();
-    const criticalCount = stats?.severity_distribution?.find(s => s._id === 'Critical')?.count || 0;
-
     return (
         <Box className="fade-in">
             <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="h4" sx={{ color: 'text.primary' }}>
-                    Security & Compliance Reports
+                    Security Incident Reports
                 </Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AssessmentIcon />}
-                    sx={{ borderRadius: 10 }}
-                    onClick={fetchStats}
-                >
-                    Refresh Data
-                </Button>
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                    {stats?.deleted > 0 && (
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            startIcon={<DeleteOutlineIcon />}
+                            sx={{ borderRadius: 10 }}
+                            onClick={handleClearHistory}
+                        >
+                            Clear History
+                        </Button>
+                    )}
+                    <Button
+                        variant="contained"
+                        startIcon={<AssessmentIcon />}
+                        sx={{ borderRadius: 10 }}
+                        onClick={fetchStats}
+                    >
+                        Refresh Data
+                    </Button>
+                </Box>
             </Box>
 
             {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-            <Grid container spacing={3}>
-                <Grid item xs={12} md={8}>
-                    <Card className="glass-card">
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom>Available Templates</Typography>
-                            <List>
-                                {reportTemplates.map((report, index) => (
-                                    <React.Fragment key={index}>
-                                        <ListItem
-                                            sx={{ py: 2 }}
-                                            secondaryAction={
-                                                <Box>
-                                                    <IconButton color="primary"><DownloadIcon /></IconButton>
-                                                    <IconButton><PrintIcon /></IconButton>
-                                                </Box>
-                                            }
-                                        >
-                                            <ListItemIcon>
-                                                <Avatar sx={{ bgcolor: report.status === 'Ready' ? 'secondary.main' : 'warning.main' }}>
-                                                    <AssessmentIcon />
-                                                </Avatar>
-                                            </ListItemIcon>
-                                            <ListItemText
-                                                primary={report.title}
-                                                secondary={`${report.description} • Last updated: ${report.lastGenerated}`}
-                                                primaryTypographyProps={{ fontWeight: 600 }}
-                                            />
-                                        </ListItem>
-                                        {index < reportTemplates.length - 1 && <Divider component="li" />}
-                                    </React.Fragment>
-                                ))}
-                            </List>
-                        </CardContent>
-                    </Card>
-                </Grid>
-
-                <Grid item xs={12} md={4}>
-                    <Card className="glass-card" sx={{ height: '100%', bgcolor: '#262626', color: '#E2E8CE' }}>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom color="#FF7F11">Compliance Score</Typography>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
-                                <Typography variant="h2" sx={{ fontWeight: 800 }}>{complianceScore}%</Typography>
-                                <Typography variant="body2" sx={{ opacity: 0.7 }}>
-                                    Based on {stats?.total_findings || 0} findings
-                                </Typography>
-                            </Box>
-                            <Divider sx={{ my: 2, bgcolor: 'rgba(255,255,255,0.1)' }} />
-                            <Typography variant="subtitle2" gutterBottom>Current Status</Typography>
-                            <List size="small">
-                                {topViolations.map((violation, idx) => (
-                                    <ListItem dense key={idx}>
-                                        <ListItemIcon sx={{ minWidth: 30 }}>
-                                            {violation.type === 'warning' ? (
-                                                <WarningAmberIcon sx={{ color: '#FF7F11', fontSize: 18 }} />
-                                            ) : (
-                                                <CheckCircleOutlineIcon sx={{ color: '#ACBFA4', fontSize: 18 }} />
-                                            )}
-                                        </ListItemIcon>
-                                        <ListItemText primary={violation.text} />
-                                    </ListItem>
-                                ))}
-                                {criticalCount > 0 && (
-                                    <ListItem dense>
-                                        <ListItemIcon sx={{ minWidth: 30 }}>
-                                            <WarningAmberIcon sx={{ color: '#FF7F11', fontSize: 18 }} />
-                                        </ListItemIcon>
-                                        <ListItemText
-                                            primary={`Critical Issues (${criticalCount})`}
-                                            sx={{ color: '#FF7F11', fontWeight: 600 }}
-                                        />
-                                    </ListItem>
-                                )}
-                            </List>
-                        </CardContent>
-                    </Card>
-                </Grid>
-            </Grid>
+            <Card className="glass-card">
+                <CardContent>
+                    <Typography variant="h6" gutterBottom>Generated Reports Library</Typography>
+                    <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+                        Download comprehensive incident reports mapping complete events.
+                    </Typography>
+                    <List>
+                        {allReports.map((report, index) => (
+                            <React.Fragment key={index}>
+                                <ListItem
+                                    sx={{ py: 2 }}
+                                    secondaryAction={
+                                        <Box>
+                                            <Button
+                                                variant="outlined"
+                                                color="secondary"
+                                                startIcon={<DownloadIcon />}
+                                                disabled={report.status === 'Unavailable'}
+                                                onClick={() => {
+                                                    if (report.status === 'Ready') {
+                                                        handleDownloadPDF(report.data, report.isDeleted);
+                                                    }
+                                                }}
+                                            >
+                                                Download PDF
+                                            </Button>
+                                        </Box>
+                                    }
+                                >
+                                    <ListItemIcon>
+                                        <Avatar sx={{ bgcolor: report.status === 'Ready' ? 'secondary.main' : 'action.disabled' }}>
+                                            <AssessmentIcon />
+                                        </Avatar>
+                                    </ListItemIcon>
+                                    <ListItemText
+                                        primary={report.title}
+                                        secondary={report.description}
+                                        primaryTypographyProps={{ fontWeight: 600, color: report.status === 'Ready' ? 'textPrimary' : 'textSecondary' }}
+                                    />
+                                </ListItem>
+                                {index < allReports.length - 1 && <Divider component="li" />}
+                            </React.Fragment>
+                        ))}
+                    </List>
+                </CardContent>
+            </Card>
         </Box>
     );
 };
 
 export default Reports;
+

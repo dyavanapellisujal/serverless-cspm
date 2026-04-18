@@ -17,6 +17,8 @@
     "@mui/x-data-grid": "^8.11.3",
     "axios": "^1.12.2",
     "date-fns": "^4.1.0",
+    "jspdf": "^4.1.0",
+    "jspdf-autotable": "^5.0.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.1",

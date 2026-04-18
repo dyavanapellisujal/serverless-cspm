@@ -11,6 +11,9 @@ import {
   ListItemText,
   Divider,
   Chip,
+  Snackbar,
+  Alert,
+  Button
 } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import SecurityIcon from '@mui/icons-material/Security';
@@ -26,10 +29,22 @@ const Navbar = () => {
   const [notifications, setNotifications] = useState([]);
   const [notificationCount, setNotificationCount] = useState(0);
 
+  // Deleted Bucket Notification State
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [currentDeletedLog, setCurrentDeletedLog] = useState(null);
+  const [deletedNotifications, setDeletedNotifications] = useState([]);
+  const [processedLogIds, setProcessedLogIds] = useState(new Set());
+
   useEffect(() => {
     fetchNotifications();
-    // Refresh notifications every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000);
+    fetchDeletedLogs();
+
+    // Refresh notifications and check for deleted logs
+    const interval = setInterval(() => {
+      fetchNotifications();
+      fetchDeletedLogs();
+    }, 10000); // Check every 10 seconds as requested
+
     return () => clearInterval(interval);
   }, []);
 
@@ -38,10 +53,56 @@ const Navbar = () => {
       const response = await axios.get(`${API_BASE_URL}/findings?severity=Critical&limit=5`);
       const criticalFindings = response.data.findings || [];
       setNotifications(criticalFindings);
-      setNotificationCount(criticalFindings.length);
+      // Update count to include both critical findings and deleted logs
+      setNotificationCount(criticalFindings.length + deletedNotifications.length);
     } catch (err) {
       console.error('Error fetching notifications:', err);
     }
+  };
+
+  const fetchDeletedLogs = async () => {
+    try {
+      // Check for logs in the last 15 seconds to ensure we catch everything between intervals
+      const response = await axios.get(`${API_BASE_URL}/logs/latest?seconds=15`);
+      const logs = response.data.logs || [];
+
+      if (logs.length > 0) {
+        // Find logs we haven't processed yet
+        const newLogs = logs.filter(log => !processedLogIds.has(log.bucket_name + log.deleted_at));
+
+        if (newLogs.length > 0) {
+          const newestLog = newLogs[0];
+          setCurrentDeletedLog(newestLog);
+          setSnackbarOpen(true);
+
+          // Add to notifications list
+          setDeletedNotifications(prev => [...newLogs, ...prev]);
+
+          // Mark as processed
+          const newIds = new Set(processedLogIds);
+          newLogs.forEach(log => newIds.add(log.bucket_name + log.deleted_at));
+          setProcessedLogIds(newIds);
+
+          // Update total count
+          setNotificationCount(prev => prev + newLogs.length);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching deleted logs:', err);
+    }
+  };
+
+  const handleSaveReport = () => {
+    setSnackbarOpen(false);
+    if (currentDeletedLog) {
+      // Navigate to reports page with params
+      navigate(`/reports?bucket=${currentDeletedLog.bucket_name}&deleted=true`);
+    }
+  };
+
+  const handleSaveLog = () => {
+    // "Saved as Log" is the default behavior (it's already in Mongo), so just close.
+    setSnackbarOpen(false);
   };
 
   const handleNotificationClick = (event) => {
@@ -59,6 +120,7 @@ const Navbar = () => {
 
   const handleRefresh = () => {
     fetchNotifications();
+    fetchDeletedLogs();
     window.location.reload();
   };
 
@@ -150,12 +212,52 @@ const Navbar = () => {
           >
             <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
               <Typography variant="h6" sx={{ color: '#FF7F11' }}>
-                Critical Alerts
+                Notifications
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                {notificationCount} critical {notificationCount === 1 ? 'issue' : 'issues'} require attention
+                {notificationCount} new {notificationCount === 1 ? 'alert' : 'alerts'}
               </Typography>
             </Box>
+
+            {/* Deleted Buckets Section */}
+            {deletedNotifications.length > 0 && (
+              <>
+                <Typography variant="subtitle2" sx={{ px: 2, py: 1, color: '#FF7F11', bgcolor: 'rgba(255, 127, 17, 0.05)' }}>
+                  Recent Deletions
+                </Typography>
+                {deletedNotifications.map((log, index) => (
+                  <MenuItem
+                    key={`del-${index}`}
+                    onClick={() => { handleClose(); navigate(`/reports?bucket=${log.bucket_name}&deleted=true`); }}
+                    sx={{
+                      py: 1.5,
+                      '&:hover': { bgcolor: 'rgba(255, 127, 17, 0.1)' }
+                    }}
+                  >
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            Bucket Deleted: {log.bucket_name}
+                          </Typography>
+                        </Box>
+                      }
+                      secondary={
+                        <Typography variant="caption" sx={{ color: '#ACBFA4' }}>
+                          {log.finding_count} vulnerabilities archived • {new Date(log.deleted_at).toLocaleTimeString()}
+                        </Typography>
+                      }
+                    />
+                  </MenuItem>
+                ))}
+                <Divider sx={{ bgcolor: 'rgba(255,255,255,0.1)' }} />
+              </>
+            )}
+
+            {/* Critical Issues Section */}
+            <Typography variant="subtitle2" sx={{ px: 2, py: 1, color: '#d32f2f', bgcolor: 'rgba(211, 47, 47, 0.05)' }}>
+              Critical Security ALerts
+            </Typography>
 
             {notifications.length === 0 ? (
               <MenuItem disabled>
@@ -168,7 +270,7 @@ const Navbar = () => {
                     onClick={() => handleNotificationItemClick(finding._id)}
                     sx={{
                       py: 1.5,
-                      '&:hover': { bgcolor: 'rgba(255, 127, 17, 0.1)' }
+                      '&:hover': { bgcolor: 'rgba(211, 47, 47, 0.1)' }
                     }}
                   >
                     <ListItemText
@@ -197,6 +299,7 @@ const Navbar = () => {
               ))
             )}
 
+
             <Divider sx={{ bgcolor: 'rgba(255,255,255,0.1)' }} />
             <MenuItem
               onClick={() => { handleClose(); navigate('/critical'); }}
@@ -212,6 +315,38 @@ const Navbar = () => {
           </Menu>
         </Box>
       </Toolbar>
+
+      {/* Deleted Bucket Notification */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={10000}
+        onClose={handleSaveLog}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={handleSaveLog}
+          severity="warning"
+          variant="filled"
+          sx={{ width: '100%', bgcolor: '#262626', color: '#E2E8CE', border: '1px solid #FF7F11' }}
+          action={
+            <Box>
+              <Button color="inherit" size="small" onClick={handleSaveReport}>
+                Save Report
+              </Button>
+              <Button color="inherit" size="small" onClick={handleSaveLog}>
+                Save as Log
+              </Button>
+            </Box>
+          }
+        >
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+            Bucket Deleted: {currentDeletedLog?.bucket_name}
+          </Typography>
+          <Typography variant="caption">
+            {currentDeletedLog?.finding_count} vulnerabilities were detected.
+          </Typography>
+        </Alert>
+      </Snackbar>
     </AppBar>
   );
 };
