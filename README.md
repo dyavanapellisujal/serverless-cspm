@@ -1,67 +1,80 @@
-# Serverless CSPM (Cloud Security Posture Management)
+# 🛡️ Serverless CSPM (Cloud Security Posture Management)
 
-A serverless security monitoring tool that identifies misconfigurations in AWS resources (S3, KMS) and displays findings in a centralized dashboard.
-
-## 🏗 Architecture Overview
-
-The system consists of three main components:
-
-1.  **Real-Time Monitoring (AWS Lambdas)**: Python-based Lambda functions (`s3-auditor`, `kms-auditor`) that trigger on resource events or scheduled scans to identify security risks.
-2.  **Findings Dashboard Backend (Flask)**: A Python API that aggregates findings from MongoDB Atlas and provides data to the frontend.
-3.  **Findings Dashboard Frontend (React + Vite)**: A modern web interface for viewing and managing security findings.
-
-## 🚀 Quick Start
-
-The project includes automation scripts for easy startup on Windows:
-
-- **`run.bat`**: A simple batch file to bypass execution policies and start the project.
-- **`start_project.ps1`**: The main PowerShell script that launches the backend and frontend in separate windows.
-
-### Prerequisites
-
-- **Python 3.9+** (Backend & Lambdas)
-- **Node.js & npm** (Frontend)
-- **AWS CLI** configured with appropriate permissions.
-- **MongoDB Atlas** account (for persistent findings storage).
-- **Terraform** (for infrastructure deployment).
-
-## 🛠 Setup Instructions
-
-### 1. MongoDB Atlas Configuration
-- Create a cluster and database named `csmp_findings`.
-- Ensure you have a connection string formatted as `mongodb+srv://...`.
-
-### 2. Backend Setup (`/csmp-findings-dashboard/backend`)
-- Copy `.env.example` to `.env` and fill in your `MONGO_URI`.
-- Install dependencies: `pip install -r requirements.txt`.
-
-### 3. Frontend Setup (`/csmp-findings-dashboard`)
-- Install dependencies: `npm install`.
-
-### 4. Infrastructure Deployment (`/real_time_monitoring/aws/terraform`)
-- Configure your `terraform.tfvars` with MongoDB details.
-- Run `terraform init` and `terraform apply`.
-
-## ✨ Recent Changes
-
-- **MongoDB Atlas Integration**: Replaced local storage with MongoDB Atlas for persistent, cloud-based findings.
-- **Fixed Lambda Handlers**: Resolved "Unable to import module" errors in AWS Lambda.
-- **Improved Startup Scripts**: Added `run.bat` and `start_project.ps1` for one-click environment startup.
-- **Sample Data Population**: Backend now includes an endpoint (`/api/populate-sample-data`) to seed the dashboard for testing.
-
-
-## 🕵️ Hidden Simulation Feature (Demo Mode)
-
-For demonstration purposes, the application includes a **hidden** workflow to simulate real-time vulnerabilities safely.
-
-- **Access**: Navigate manually to `http://localhost:5173/simulation-secret`
-- **Functionality**:
-    - Creates a real AWS S3 bucket with the prefix `cspm-demo-`.
-    - Applies a public bucket policy to trigger security alerts.
-- **Safety Measures**:
-    - **Restricted Prefix**: Backend only interacts with buckets starting with `cspm-demo-`.
-    - **Auto-Cleanup**: Resources are automatically deleted after 15 minutes.
-    - **Least Privilege**: Requires a dedicated IAM user with limited permissions (see `implementation_plan.md`).
+A high-performance, real-time security intelligence platform designed to identify, visualize, and remediate AWS infrastructure misconfigurations (S3, EC2, KMS).
 
 ---
-*For component-specific details, see the READMEs in the respective subdirectories.*
+
+## 🌟 Key Features
+*   **Real-Time Event-Driven Auditing:** Triggered by AWS CloudWatch/EventBridge for instant risk detection.
+*   **Dual-Audit Logic (Cross-Service):** Correlates S3 bucket security with the underlying KMS Key policies.
+*   **OPA-Powered Engine:** Uses Open Policy Agent (Rego) for cloud-native compliance checks.
+*   **Automated Forensics:** Generates professional PDF reports with full incident timelines.
+*   **Interactive Dashboard:** A modern, glassmorphic UI with real-time security posture trending.
+
+---
+
+## 🏗 System Architecture
+The platform follows a highly scalable, serverless event-driven architecture:
+
+1.  **Detection Layer:** EventBridge captures resource changes (e.g., `CreateBucket`, `AuthorizeSecurityGroupIngress`).
+2.  **Audit Layer:** AWS Lambda functions execute specialized Python auditors (`S3Audit`, `KMSAudit`) using **OPA policies**.
+3.  **Storage Layer:** Findings are stored globally in **MongoDB Atlas**.
+4.  **Presentation Layer:** A **React + Vite** dashboard pulls intelligence from a **Flask API** backend.
+
+---
+
+## 🛠 Tech Stack
+*   **Infrastructure:** Terraform, AWS Lambda, EventBridge, SQS.
+*   **Backend:** Python (Flask), PyMongo, Open Policy Agent (Rego).
+*   **Frontend:** React, Material UI (MUI), Recharts, Vite.
+*   **Database:** MongoDB Atlas (Cloud).
+
+---
+
+## 🚀 Quick Setup
+
+### 1. Database Configuration
+*   Create a Cluster on **MongoDB Atlas**.
+*   In **Network Access**, whitelist your IP and AWS Lambda (or `0.0.0.0/0` for testing).
+*   Create a `.env` file in the root directory with:
+    ```env
+    MONGODB_URI="your_connection_string"
+    DATABASE_NAME="csmp_findings"
+    ```
+
+### 2. AWS Resource Deployment
+*   Navigate to `real_time_monitoring/aws/terraform`.
+*   Update `terraform.tfvars` with your MongoDB URI.
+*   Run:
+    ```bash
+    terraform init
+    terraform apply
+    ```
+
+### 3. Start the Dashboard
+*   Click **`run.bat`** in the root folder, OR run:
+    ```powershell
+    ./start_project.ps1
+    ```
+
+---
+
+## 🧪 Demonstration & Test Cases
+The project includes a specialized test guide at [testcase.md](./testcase.md).
+
+### Standard 6-Stage Demo sequence:
+1.  **Public S3 Exposure:** Detection of unblocked public access.
+2.  **Encryption Violation:** Catching unencrypted S3 buckets.
+3.  **Network Entry Point:** Identifying unrestricted SSH (0.0.0.0/0).
+4.  **KMS Deep-Audit:** Finding insecure Key Policies linked to private buckets.
+5.  **Real-Time Remediation:** Dashboard "self-healing" when AWS resources are fixed.
+6.  **Incident Reporting:** One-button PDF generation for compliance audits.
+
+---
+
+## 🧹 Maintenance & Security
+*   **Reset Dashboard:** To clear all findings before a demo, run `python clear_db.py`.
+*   **Security Guard:** Sensitive credentials (`.env`, `*.tfvars`) are protected via `.gitignore` and are not tracked in the repository history.
+
+---
+*Developed for advanced cloud security automation and real-time posture awareness.*
