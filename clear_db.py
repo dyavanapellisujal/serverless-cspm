@@ -1,15 +1,22 @@
 import pymongo
 import os
-import json
+from dotenv import load_dotenv
 
-# Connection Details from your Terraform config
-MONGO_URI = "mongodb+srv://Adminuser:dbJayCSPM@cluster1.lnqotfu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1"
+# Load sensitive credentials from .env file
+load_dotenv()
+
+MONGO_URI = os.getenv('MONGODB_URI')
+DATABASE_NAME = os.getenv('DATABASE_NAME', 'csmp_findings')
 
 def clear_cspm_data():
+    if not MONGO_URI:
+        print("[ERROR] MONGODB_URI not found in .env file!")
+        return
+
     try:
-        print("Connecting to MongoDB Atlas (Cluster 1)...")
+        print("Connecting to MongoDB Atlas securely...")
         client = pymongo.MongoClient(MONGO_URI)
-        db = client['csmp_findings']
+        db = client[DATABASE_NAME]
         
         # Collections to clear
         collections = ['s3_audit_findings', 's3_audit_logs', 'reports', 'kms_security_findings']

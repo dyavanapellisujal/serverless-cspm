@@ -290,19 +290,19 @@ def audit_bucket_security(bucket_name, account_id, region, tagset=None, s3_clien
     if finding_details is None:
         if kms_audit_result:
             print(f"[INFO] S3 is compliant, but linked KMS key has issues. Proceeding with report.")
-            risk = "Critical"
+            risk = "CRITICAL"
             reason = "KMS SECURITY ALERT: Linked encryption key permits Public Access (Principal: *). Data is exposed to decryption risk."
         else:
             print(f"[INFO] No findings for bucket '{bucket_name}'. It is compliant.")
             print("="*50 + "\n")
             return None
     else:
-        risk = finding_details["risk_level"]
+        risk = finding_details["risk_level"].upper()
         reason = finding_details["reason"]
         
         # Override reason if KMS issues are found to make them the primary focus
         if kms_audit_result:
-            risk = "Critical" # Escalate to critical if key is public
+            risk = "CRITICAL" # Escalate to critical if key is public
             reason = f"KMS SECURITY ALERT: Linked encryption key is publicly accessible! | (Internal bucket issues: {reason})"
 
     # --- 4. Generate comprehensive finding ---

@@ -7,23 +7,46 @@ import {
   Typography,
   Button,
   CircularProgress,
-  Divider,
 } from '@mui/material';
 import SecurityIcon from '@mui/icons-material/Security';
 import WarningIcon from '@mui/icons-material/Warning';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+const mockTrendData = [
+  { name: 'Day 1', findings: 4 },
+  { name: 'Day 5', findings: 7 },
+  { name: 'Day 10', findings: 12 },
+  { name: 'Day 15', findings: 8 },
+  { name: 'Day 20', findings: 15 },
+  { name: 'Day 25', findings: 10 },
+  { name: 'Present', findings: 18 },
+];
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // Dynamic data based on stats
+  const trendData = stats?.total_findings > 0 ? [
+    ...mockTrendData.slice(0, -1),
+    { name: 'Present', findings: stats.total_findings }
+  ] : mockTrendData;
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -40,10 +63,10 @@ const Dashboard = () => {
     fetchStats();
   }, []);
 
-  const StatCard = ({ title, value, icon, color, trend }) => (
+  const StatCard = ({ title, value, icon, color }) => (
     <Card className="glass-card" sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
       <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <Box sx={{
             p: 1.5,
             borderRadius: '12px',
@@ -54,12 +77,6 @@ const Dashboard = () => {
           }}>
             {icon}
           </Box>
-          {trend && (
-            <Box sx={{ display: 'flex', alignItems: 'center', color: trend > 0 ? 'error.main' : 'success.main' }}>
-              <TrendingUpIcon sx={{ fontSize: 16, mr: 0.5 }} />
-              <Typography variant="caption" sx={{ fontWeight: 700 }}>{trend}%</Typography>
-            </Box>
-          )}
         </Box>
         <Typography variant="h3" sx={{ fontWeight: 800, mb: 0.5 }}>
           {value || 0}
@@ -98,7 +115,6 @@ const Dashboard = () => {
             value={stats?.total_findings}
             icon={<SecurityIcon />}
             color="#262626"
-            trend={+12}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -107,7 +123,6 @@ const Dashboard = () => {
             value={stats?.severity_distribution?.find(s => s._id === 'CRITICAL')?.count}
             icon={<ErrorOutlineIcon />}
             color="#FF7F11"
-            trend={+2}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -116,7 +131,6 @@ const Dashboard = () => {
             value={stats?.severity_distribution?.find(s => s._id === 'HIGH')?.count}
             icon={<WarningIcon />}
             color="#E4A11B"
-            trend={-5}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
@@ -125,7 +139,6 @@ const Dashboard = () => {
             value={stats?.status_distribution?.find(s => s._id === 'resolved')?.count}
             icon={<CheckCircleOutlineIcon />}
             color="#ACBFA4"
-            trend={-18}
           />
         </Grid>
       </Grid>
@@ -135,18 +148,42 @@ const Dashboard = () => {
           <Card className="glass-card" sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>Security Posture Trend</Typography>
-              <Box sx={{
-                height: 300,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                bgcolor: 'rgba(0,0,0,0.02)',
-                borderRadius: 4,
-                mb: 2
-              }}>
-                <Typography variant="body2" sx={{ opacity: 0.5, fontStyle: 'italic' }}>
-                  Interactive Trend Visualization (Last 30 Days)
-                </Typography>
+              <Box sx={{ height: 300, mt: 2, mb: 2 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendData}>
+                    <defs>
+                      <linearGradient id="colorFindings" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#FF7F11" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#FF7F11" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 12, fill: '#666' }}
+                    />
+                    <YAxis 
+                      hide 
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        borderRadius: '8px', 
+                        border: 'none', 
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)' 
+                      }} 
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="findings" 
+                      stroke="#FF7F11" 
+                      strokeWidth={3}
+                      fillOpacity={1} 
+                      fill="url(#colorFindings)" 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </Box>
               <Button
                 endIcon={<ArrowForwardIcon />}

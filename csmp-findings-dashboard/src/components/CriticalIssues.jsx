@@ -42,7 +42,7 @@ const CriticalIssues = () => {
     const fetchCriticalFindings = async () => {
         try {
             setLoading(true);
-            const response = await axios.get(`${API_BASE_URL}/findings?severity=Critical`);
+            const response = await axios.get(`${API_BASE_URL}/findings?severity=CRITICAL`);
             setFindings(response.data.findings);
             setError(null);
         } catch (err) {
@@ -56,7 +56,7 @@ const CriticalIssues = () => {
     const getRemediationSteps = (finding) => {
         const steps = [];
 
-        if (finding.service === 'S3' && finding.title.includes('Public Access')) {
+        if (finding.service === 'S3' && (finding.title.includes('Public Access') || finding.description.includes('Public Access'))) {
             steps.push({
                 title: 'Block All Public Access',
                 description: 'Navigate to S3 console → Select bucket → Permissions → Block public access → Enable all 4 options',
@@ -68,28 +68,28 @@ const CriticalIssues = () => {
                 description: 'Check and remove any policies that grant public access',
                 priority: 'High',
             });
+        } else if (finding.service === 'EC2' && finding.title.includes('SSH')) {
             steps.push({
-                title: 'Enable Access Logging',
-                description: 'Enable S3 access logging to monitor future access patterns',
-                priority: 'Medium',
-            });
-        } else if (finding.service === 'IAM' && finding.title.includes('MFA')) {
-            steps.push({
-                title: 'Enable MFA Immediately',
-                description: 'IAM Console → Users → Security credentials → Assign MFA device',
+                title: 'Revoke Unrestricted SSH Access',
+                description: 'EC2 Console → Security Groups → Select Group → Edit Inbound Rules → Remove 0.0.0.0/0 on port 22',
                 priority: 'Critical',
+                awsCli: `aws ec2 revoke-security-group-ingress --group-id ${finding.resource_name} --protocol tcp --port 22 --cidr 0.0.0.0/0`,
             });
             steps.push({
-                title: 'Review User Permissions',
-                description: 'Ensure user follows principle of least privilege',
+                title: 'Restrict Access to Known IPs',
+                description: 'Modify SSH rules to only allow specific IP ranges (e.g., your corporate VPN)',
                 priority: 'High',
             });
         } else if (finding.service === 'KMS') {
             steps.push({
-                title: 'Enable Automatic Key Rotation',
+                title: 'Restrict KMS Key Policy',
+                description: 'KMS Console → Customer managed keys → Select key → Key policy → Change Principal from "*" to specific IAM roles',
+                priority: 'Critical',
+            });
+            steps.push({
+                title: 'Enable Key Rotation',
                 description: 'KMS Console → Customer managed keys → Select key → Key rotation → Enable',
                 priority: 'High',
-                awsCli: `aws kms enable-key-rotation --key-id ${finding.resource_id}`,
             });
         }
 
