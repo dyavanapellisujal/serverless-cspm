@@ -8,6 +8,7 @@ import Findings from './components/Findings';
 import Reports from './components/Reports';
 import FindingDetail from './components/FindingDetail';
 import CriticalIssues from './components/CriticalIssues';
+import Settings from './components/Settings';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 
@@ -80,6 +81,7 @@ function App() {
               <Route path="/reports" element={<Reports />} />
 
               <Route path="/finding/:id" element={<FindingDetail />} />
+              <Route path="/settings" element={<Settings />} />
             </Routes>
           </Box>
         </Box>

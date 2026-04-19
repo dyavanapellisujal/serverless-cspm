@@ -72,17 +72,20 @@ Follow these 6 test cases to show the full lifecycle of your CSPM platform—fro
 
 ---
 
-## 🔄 Test Case 5: The "Self-Cleaning" Dashboard (Remediation)
-**Objective:** Demonstrate that the system intelligently tracks cleanup and "self-heals" the dashboard.
+## 🔄 Test Case 5: Active Remediation Control
+**Objective:** Prove that the platform can take action to resolve risks, not just detect them.
 
-**Execution Steps (AWS Console):**
-1. **Remediate S3:** Delete the test buckets you created (`DeleteBucket`).
-2. **Remediate EC2:** Remove the `0.0.0.0/0` rule from your Security Group.
-3. Observe the Dashboard "All Findings" list.
+**Execution Steps (Dashboard):**
+1. **Locate finding:** Click on the "Public Access" finding from Test Case 1 in the dashboard.
+2. **Review:** Observe the "Recommendations" sidebar and verify the "Delete Resource" guidance.
+3. **Trigger Cleanup:** Click the red **"Remediate (Delete)"** button in Quick Actions.
+4. **Confirm:** Type **`DELETE`** in the confirmation box and click confirm.
+5. **Verify:** Observe the Dashboard "All Findings" list.
 
 **Expected Outcome:**
-* **Dashboard Behavior:** The active findings disappear from the main screen effortlessly.
-* **System Logic:** Findings are archived into **Deleted Logs**, creating a closed-loop security posture.
+* **Dashboard Behavior:** The finding is immediately removed from the active list.
+* **AWS State:** The bucket is permanently deleted from your AWS account.
+* **System Logic:** Findings are archived into **Deleted Logs**, and a success notification is shown.
 
 ---
 

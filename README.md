@@ -8,6 +8,7 @@ A high-performance, real-time security intelligence platform designed to identif
 *   **Real-Time Event-Driven Auditing:** Triggered by AWS CloudWatch/EventBridge for instant risk detection.
 *   **Dual-Audit Logic (Cross-Service):** Correlates S3 bucket security with the underlying KMS Key policies.
 *   **OPA-Powered Engine:** Uses Open Policy Agent (Rego) for cloud-native compliance checks.
+*   **Active Remediation Control:** One-click secure deletion/termination of non-compliant resources directly from the dashboard.
 *   **Automated Forensics:** Generates professional PDF reports with full incident timelines.
 *   **Interactive Dashboard:** A modern, glassmorphic UI with real-time security posture trending.
 
@@ -67,7 +68,7 @@ The project includes a specialized test guide at [testcase.md](./testcase.md).
 2.  **Encryption Violation:** Catching unencrypted S3 buckets.
 3.  **Network Entry Point:** Identifying unrestricted SSH (0.0.0.0/0).
 4.  **KMS Deep-Audit:** Finding insecure Key Policies linked to private buckets.
-5.  **Real-Time Remediation:** Dashboard "self-healing" when AWS resources are fixed.
+5.  **Active Dashboard Remediation:** One-click secure resource deletion with "DELETE" confirmation safeguard.
 6.  **Incident Reporting:** One-button PDF generation for compliance audits.
 
 ---

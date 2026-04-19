@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
 import random
+import boto3
+from botocore.exceptions import ClientError
 
 # Load environment variables
 load_dotenv()
@@ -175,6 +177,101 @@ def update_finding_status(finding_id):
         
         return jsonify({"message": "Status updated successfully"})
         
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/findings/<finding_id>/remediate', methods=['POST'])
+def remediate_finding(finding_id):
+    """Remediate a resource based on a finding (e.g., delete S3 bucket)"""
+    if collection is None:
+        return jsonify({"error": "Database not connected"}), 500
+    
+    try:
+        # Find the finding first
+        finding = collection.find_one({"_id": ObjectId(finding_id)})
+        if not finding:
+            return jsonify({"error": "Finding not found"}), 404
+            
+        data = request.get_json()
+        confirmation = data.get('confirmation')
+        
+        if confirmation != "DELETE":
+            return jsonify({"error": "Confirmation 'DELETE' is required for this destructive action"}), 400
+
+        service = finding.get('service')
+        resource_name = finding.get('resource_name') or finding.get('bucket_name') or finding.get('resource_id')
+        
+        # Remediation logic based on service
+        # Note: In a production environment, you would use more granular actions (e.g., fix policy instead of delete)
+        # But per user request, we implement deletion as a remediation path.
+        
+        success = False
+        message = ""
+        
+        try:
+            if service == 'S3':
+                s3 = boto3.client('s3')
+                # For S3, we need to delete objects first as bucket must be empty
+                try:
+                    # In a real app, you might want a recursive delete tool or clear bucket logic
+                    # Here we attempt to delete the bucket. If it's not empty, it will fail unless we empty it.
+                    # For safety in this demo, we'll try to delete.
+                    s3.delete_bucket(Bucket=resource_name)
+                    success = True
+                    message = f"Successfully deleted S3 bucket: {resource_name}"
+                except ClientError as e:
+                    if e.response['Error']['Code'] == 'BucketNotEmpty':
+                        # Optional: list and delete objects? (Too destructive?)
+                        # For now, just report the error.
+                        message = f"Failed to delete S3 bucket {resource_name}: Bucket is not empty."
+                        success = False
+                    else:
+                        message = f"AWS Error: {e.response['Error']['Message']}"
+                        success = False
+            
+            elif service == 'EC2':
+                # Example: Stop instance or delete security group
+                # If resource_id is instance id
+                ec2 = boto3.client('ec2')
+                ec2.terminate_instances(InstanceIds=[resource_name])
+                success = True
+                message = f"Successfully terminated EC2 instance: {resource_name}"
+            
+            elif service == 'KMS':
+                kms = boto3.client('kms')
+                kms.schedule_key_deletion(KeyId=resource_name, PendingWindowInDays=7)
+                success = True
+                message = f"Successfully scheduled KMS key deletion for: {resource_name}"
+            
+            else:
+                message = f"Auto-remediation not implemented for service: {service}"
+                success = False
+                
+        except Exception as e:
+            message = f"Remediation error: {str(e)}"
+            success = False
+
+        if success:
+            # Move finding to s3_audit_logs (archive)
+            db = client[DATABASE_NAME]
+            logs_collection = db['s3_audit_logs']
+            
+            log_entry = finding.copy()
+            log_entry['remediated_at'] = datetime.utcnow()
+            log_entry['deleted_at'] = datetime.utcnow() # To match existing report logic
+            log_entry['status'] = 'resolved'
+            log_entry['remediation_message'] = message
+            
+            # Remove from active findings
+            collection.delete_one({"_id": ObjectId(finding_id)})
+            
+            # Insert into logs
+            logs_collection.insert_one(log_entry)
+            
+            return jsonify({"message": message, "status": "remediated"})
+        else:
+            return jsonify({"error": message}), 500
+            
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

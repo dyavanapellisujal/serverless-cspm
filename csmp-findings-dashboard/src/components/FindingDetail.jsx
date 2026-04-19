@@ -22,16 +22,17 @@ import {
   ListItem,
   ListItemText,
   ListItemIcon,
+  TextField,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SecurityIcon from '@mui/icons-material/Security';
 import CloudIcon from '@mui/icons-material/Cloud';
-import ScheduleIcon from '@mui/icons-material/Schedule';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
 import ErrorIcon from '@mui/icons-material/Error';
 import InfoIcon from '@mui/icons-material/Info';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
@@ -65,6 +66,10 @@ const FindingDetail = () => {
   const [error, setError] = useState(null);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState('');
+  const [remediateDialogOpen, setRemediateDialogOpen] = useState(false);
+  const [remediateConfirm, setRemediateConfirm] = useState('');
+  const [remediating, setRemediating] = useState(false);
+  const [remediationError, setRemediationError] = useState(null);
 
   useEffect(() => {
     fetchFinding();
@@ -94,6 +99,29 @@ const FindingDetail = () => {
       setStatusDialogOpen(false);
     } catch (err) {
       console.error('Error updating status:', err);
+    }
+  };
+  
+  const handleRemediate = async () => {
+    if (remediateConfirm !== 'DELETE') {
+      setRemediationError('Please type DELETE to confirm.');
+      return;
+    }
+    
+    try {
+      setRemediating(true);
+      setRemediationError(null);
+      const response = await axios.post(`${API_BASE_URL}/findings/${id}/remediate`, {
+        confirmation: remediateConfirm
+      });
+      // If successful, the finding is moved to logs. Redirect to logs or home.
+      setRemediateDialogOpen(false);
+      navigate('/reports?bucket=' + (finding.resource_name || finding.bucket_name || finding.resource_id) + '&deleted=true');
+    } catch (err) {
+      setRemediationError(err.response?.data?.error || 'Failed to remediate resource.');
+      console.error('Remediation error:', err);
+    } finally {
+      setRemediating(false);
     }
   };
 
@@ -150,6 +178,12 @@ const FindingDetail = () => {
           priority: 'High',
         });
       }
+      // Added per user request: delete option
+      recommendations.push({
+        title: 'Remediate: Delete S3 Bucket',
+        description: 'The most effective way to eliminate risk for unauthorized resources is to completely delete the bucket and its contents.',
+        priority: 'Critical',
+      });
     }
 
     if (finding?.service === 'EC2') {
@@ -159,9 +193,9 @@ const FindingDetail = () => {
         priority: 'High',
       });
       recommendations.push({
-        title: 'Enable VPC Flow Logs',
-        description: 'Enable VPC Flow Logs to monitor network traffic.',
-        priority: 'Medium',
+        title: 'Remediate: Terminate Instance',
+        description: 'If the instance is compromised or unauthorized, terminate it immediately to prevent lateral movement.',
+        priority: 'Critical',
       });
     }
 
@@ -172,9 +206,17 @@ const FindingDetail = () => {
         priority: 'High',
       });
       recommendations.push({
-        title: 'Enable MFA',
-        description: 'Require multi-factor authentication for sensitive operations.',
-        priority: 'High',
+        title: 'Remediate: Delete IAM Entity',
+        description: 'Delete unauthorized IAM users, groups, or roles to prevent unauthorized access to your cloud environment.',
+        priority: 'Critical',
+      });
+    }
+
+    if (finding?.service === 'KMS') {
+      recommendations.push({
+        title: 'Remediate: Schedule Key Deletion',
+        description: 'If a KMS key is insecure or exposed, schedule it for deletion to prevent its further use.',
+        priority: 'Critical',
       });
     }
 
@@ -403,11 +445,13 @@ const FindingDetail = () => {
                   View in AWS Console
                 </Button>
                 <Button
-                  variant="outlined"
-                  startIcon={<ScheduleIcon />}
+                  variant="contained"
+                  color="error"
+                  startIcon={<DeleteOutlineIcon />}
                   fullWidth
+                  onClick={() => setRemediateDialogOpen(true)}
                 >
-                  Schedule Remediation
+                  Remediate (Delete)
                 </Button>
                 <Button
                   variant="outlined"
@@ -445,6 +489,61 @@ const FindingDetail = () => {
           <Button onClick={() => setStatusDialogOpen(false)}>Cancel</Button>
           <Button onClick={updateStatus} variant="contained">
             Update
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Remediation Dialog */}
+      <Dialog 
+        open={remediateDialogOpen} 
+        onClose={() => !remediating && setRemediateDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon /> Confirm Destructive Remediation
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            You are about to perform a <strong>DESTRUCTIVE</strong> action. 
+            This will attempt to delete or terminate the resource: 
+            <Box component="span" sx={{ fontFamily: 'monospace', mx: 1, p: 0.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+              {finding.resource_name || finding.bucket_name || finding.resource_id}
+            </Box>
+          </Typography>
+          
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            This action cannot be undone. All data within the resource will be lost. 
+            The finding will be archived in the logs once the action is complete.
+          </Alert>
+          
+          <Typography variant="body2" gutterBottom>
+            To confirm this action, please type <strong>DELETE</strong> below:
+          </Typography>
+          
+          <TextField
+            fullWidth
+            size="small"
+            value={remediateConfirm}
+            onChange={(e) => setRemediateConfirm(e.target.value)}
+            placeholder="Type DELETE here"
+            error={!!remediationError}
+            helperText={remediationError}
+            disabled={remediating}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemediateDialogOpen(false)} disabled={remediating}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleRemediate} 
+            variant="contained" 
+            color="error"
+            disabled={remediating || remediateConfirm !== 'DELETE'}
+            startIcon={remediating ? <CircularProgress size={20} color="inherit" /> : <DeleteOutlineIcon />}
+          >
+            {remediating ? 'Processing...' : 'Delete Resource'}
           </Button>
         </DialogActions>
       </Dialog>

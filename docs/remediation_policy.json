@@ -1,0 +1,51 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "S3Remediation",
+            "Effect": "Allow",
+            "Action": [
+                "s3:DeleteBucket",
+                "s3:DeleteObject",
+                "s3:ListBucket",
+                "s3:GetBucketTagging",
+                "s3:GetBucketPolicy"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "EC2Remediation",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:TerminateInstances",
+                "ec2:DeleteSecurityGroup",
+                "ec2:RevokeSecurityGroupIngress",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeInstances"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "KMSRemediation",
+            "Effect": "Allow",
+            "Action": [
+                "kms:ScheduleKeyDeletion",
+                "kms:DescribeKey"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "IAMRemediation",
+            "Effect": "Allow",
+            "Action": [
+                "iam:DeleteUser",
+                "iam:DeleteGroup",
+                "iam:DeleteRole",
+                "iam:RemoveUserFromGroup",
+                "iam:DetachUserPolicy",
+                "iam:DetachGroupPolicy"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

@@ -108,13 +108,22 @@ const Sidebar = () => {
         <List>
           <ListItem disablePadding>
             <ListItemButton
+              selected={location.pathname === '/settings'}
+              onClick={() => navigate('/settings')}
               sx={{
                 mx: 1,
                 borderRadius: 2,
+                '&.Mui-selected': {
+                  backgroundColor: 'rgba(255, 127, 17, 0.2)',
+                  color: '#FF7F11',
+                },
                 '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.05)' }
               }}
             >
-              <ListItemIcon sx={{ color: '#ACBFA4', minWidth: 40 }}>
+              <ListItemIcon sx={{ 
+                color: location.pathname === '/settings' ? '#FF7F11' : '#ACBFA4', 
+                minWidth: 40 
+              }}>
                 <SettingsIcon />
               </ListItemIcon>
               <ListItemText

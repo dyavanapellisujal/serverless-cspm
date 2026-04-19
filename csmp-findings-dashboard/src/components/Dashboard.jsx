@@ -13,17 +13,9 @@ import WarningIcon from '@mui/icons-material/Warning';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer
-} from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import GppGoodIcon from '@mui/icons-material/GppGood';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -41,6 +33,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [recentFindings, setRecentFindings] = useState([]);
   
   // Dynamic data based on stats
   const trendData = stats?.total_findings > 0 ? [
@@ -49,19 +42,32 @@ const Dashboard = () => {
   ] : mockTrendData;
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`${API_BASE_URL}/stats`);
-        setStats(response.data);
+        const [statsRes, findingsRes] = await Promise.all([
+          axios.get(`${API_BASE_URL}/stats`),
+          axios.get(`${API_BASE_URL}/findings?limit=5`)
+        ]);
+        setStats(statsRes.data);
+        setRecentFindings(findingsRes.data.findings || []);
       } catch (err) {
-        console.error('Error fetching stats:', err);
+        console.error('Error fetching dashboard data:', err);
       } finally {
         setLoading(false);
       }
     };
-    fetchStats();
+    fetchDashboardData();
   }, []);
+  
+  const complianceScore = stats?.total_findings > 0 
+    ? Math.round(((stats.status_distribution?.find(s => s._id === 'resolved')?.count || 0) / stats.total_findings) * 100)
+    : 100;
+
+  const formatTime = (time) => {
+    if (!time) return '';
+    return new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
   const StatCard = ({ title, value, icon, color }) => (
     <Card className="glass-card" sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
@@ -100,14 +106,14 @@ const Dashboard = () => {
     <Box className="fade-in">
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" sx={{ color: 'text.primary', mb: 1 }}>
-          System At A Glance
+          Security Posture Overview
         </Typography>
         <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-          Real-time security posture monitoring for cloud infrastructure.
+          Real-time security monitoring for your cloud infrastructure.
         </Typography>
       </Box>
 
-      {/* Hero Stats */}
+      {/* Hero Stats (Row 1) */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
@@ -143,65 +149,17 @@ const Dashboard = () => {
         </Grid>
       </Grid>
 
-      <Grid container spacing={4}>
+      {/* Main Content (Row 2) */}
+      <Grid container spacing={3}>
+        {/* Left: Affected Services */}
         <Grid item xs={12} md={7}>
-          <Card className="glass-card" sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>Security Posture Trend</Typography>
-              <Box sx={{ height: 300, mt: 2, mb: 2 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={trendData}>
-                    <defs>
-                      <linearGradient id="colorFindings" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#FF7F11" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#FF7F11" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fontSize: 12, fill: '#666' }}
-                    />
-                    <YAxis 
-                      hide 
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        borderRadius: '8px', 
-                        border: 'none', 
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)' 
-                      }} 
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="findings" 
-                      stroke="#FF7F11" 
-                      strokeWidth={3}
-                      fillOpacity={1} 
-                      fill="url(#colorFindings)" 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </Box>
-              <Button
-                endIcon={<ArrowForwardIcon />}
-                onClick={() => navigate('/findings')}
-                sx={{ fontWeight: 700 }}
-              >
-                Explore All Findings
-              </Button>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={5}>
-          <Card className="glass-card" sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>Top Affected Services</Typography>
-              <Box sx={{ mt: 3 }}>
-                {stats?.service_distribution?.map((service, index) => (
+          <Card className="glass-card" sx={{ height: '360px' }}>
+            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
+                Top Affected Services
+              </Typography>
+              <Box sx={{ mt: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                {stats?.service_distribution?.length > 0 ? stats.service_distribution.map((service, index) => (
                   <Box key={index} sx={{ mb: 3 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>{service._id}</Typography>
@@ -209,21 +167,79 @@ const Dashboard = () => {
                     </Box>
                     <Box sx={{
                       width: '100%',
-                      height: 8,
+                      height: 10,
                       bgcolor: 'rgba(0,0,0,0.05)',
-                      borderRadius: 4,
+                      borderRadius: 5,
                       overflow: 'hidden'
                     }}>
                       <Box sx={{
                         width: `${(service.count / stats.total_findings) * 100}%`,
                         height: '100%',
-                        bgcolor: index === 0 ? '#FF7F11' : '#ACBFA4'
+                        bgcolor: index === 0 ? '#FF7F11' : '#ACBFA4',
+                        transition: 'width 1s ease-in-out'
                       }} />
                     </Box>
                   </Box>
-                ))}
+                )) : (
+                  <Typography variant="body2" color="textSecondary" align="center">
+                    No service data available.
+                  </Typography>
+                )}
               </Box>
+              <Button
+                endIcon={<ArrowForwardIcon />}
+                onClick={() => navigate('/findings')}
+                sx={{ mt: 'auto', alignSelf: 'flex-start', fontWeight: 700 }}
+              >
+                View Detailed Inventory
+              </Button>
             </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Right: Health Score Gauge */}
+        <Grid item xs={12} md={5}>
+          <Card className="glass-card" sx={{ height: '360px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
+              Overall Health Score
+            </Typography>
+            <Box sx={{ position: 'relative', display: 'inline-flex', my: 2 }}>
+              <CircularProgress
+                variant="determinate"
+                value={complianceScore}
+                size={180}
+                thickness={5}
+                sx={{ 
+                  color: complianceScore > 80 ? '#ACBFA4' : complianceScore > 50 ? '#E4A11B' : '#FF7F11',
+                  filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.1))'
+                }}
+              />
+              <Box
+                sx={{
+                  top: 0,
+                  left: 0,
+                  bottom: 0,
+                  right: 0,
+                  position: 'absolute',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'column'
+                }}
+              >
+                <Typography variant="h2" component="div" sx={{ fontWeight: 900, color: 'text.primary' }}>
+                  {complianceScore}%
+                </Typography>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', tracking: 1 }}>
+                  COMPLIANT
+                </Typography>
+              </Box>
+            </Box>
+            <Typography variant="body2" color="textSecondary" align="center" sx={{ mt: 2, maxWidth: '80%' }}>
+              {complianceScore === 100 
+                ? "Perfect posture! All cloud resources meet security baselines." 
+                : `Action required: ${100 - complianceScore}% of audited resources are currently non-compliant.`}
+            </Typography>
           </Card>
         </Grid>
       </Grid>
