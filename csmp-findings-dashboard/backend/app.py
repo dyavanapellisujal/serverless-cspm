@@ -230,12 +230,23 @@ def remediate_finding(finding_id):
                         success = False
             
             elif service == 'EC2':
-                # Example: Stop instance or delete security group
-                # If resource_id is instance id
                 ec2 = boto3.client('ec2')
-                ec2.terminate_instances(InstanceIds=[resource_name])
-                success = True
-                message = f"Successfully terminated EC2 instance: {resource_name}"
+                # Check both possible field names for the ID
+                res_id = finding.get('resource_id') or finding.get('resource_name')
+                
+                if not res_id:
+                    return jsonify({"error": f"No resource_id or resource_name found for EC2 finding {id}"}), 400
+                
+                if res_id.startswith('sg-'):
+                    # Handle Security Group deletion
+                    ec2.delete_security_group(GroupId=res_id)
+                    success = True
+                    message = f"Successfully deleted Security Group: {res_id}"
+                else:
+                    # Handle Instance termination
+                    ec2.terminate_instances(InstanceIds=[res_id])
+                    success = True
+                    message = f"Successfully terminated EC2 instance: {res_id}"
             
             elif service == 'KMS':
                 kms = boto3.client('kms')
