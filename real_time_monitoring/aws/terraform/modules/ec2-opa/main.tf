@@ -57,10 +57,22 @@ resource "aws_instance" "opa_server" {
 
 
     #!/bin/bash
-    sudo -u ec2-user curl -L -o /home/ec2-user/opa https://openpolicyagent.org/downloads/v1.4.2/opa_linux_amd64_static
+    # Wait for network to be ready
+    sleep 30
+    sudo yum update -y
+    
+    # Download OPA (using 'latest' to ensure valid URL)
+    sudo -u ec2-user curl -L -o /home/ec2-user/opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
     sudo -u ec2-user chmod 755 /home/ec2-user/opa
+    
     cd /home/ec2-user
+    # Ensure config directory exists
+    sudo -u ec2-user mkdir -p /home/ec2-user/config_files
+    
+    # Copy config files
     sudo -u ec2-user aws s3 cp s3://${var.opa_conf_bucket_name}/config_files/ /home/ec2-user/config_files --recursive
+    
+    # Start OPA
     nohup sudo -u ec2-user ./opa run --server ./config_files --addr 0.0.0.0:8181 > /var/log/opa.log 2>&1 &
     
     

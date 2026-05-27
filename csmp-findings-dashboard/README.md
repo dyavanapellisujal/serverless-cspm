@@ -1,12 +1,21 @@
-# React + Vite
+# CSMP Findings Dashboard Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the React-based frontend for the Serverless CSPM project. It provides a modern interface to visualize security findings across your AWS infrastructure.
 
-Currently, two official plugins are available:
+## 🚀 Getting Started
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1.  **Install Dependencies**:
+    ```bash
+    npm install
+    ```
 
-## Expanding the ESLint configuration
+2.  **Run Development Server**:
+    ```bash
+    npm run dev
+    ```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🏗 Integration
+
+The frontend communicates with the Flask backend (default: `http://localhost:5000`) to fetch findings and statistics.
+
+For full project setup and architecture details, please refer to the [Root Project Guide](../README.md).

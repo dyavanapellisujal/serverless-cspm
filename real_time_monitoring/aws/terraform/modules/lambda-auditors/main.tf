@@ -190,6 +190,15 @@ resource "aws_iam_role_policy" "s3_lambda_policy" {
       {
         Effect = "Allow"
         Action = [
+          "iam:Get*",
+          "iam:List*",
+          "ec2:Describe*"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"

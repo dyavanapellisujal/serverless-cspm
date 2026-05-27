@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 
 # --- Configuration ---
 # Use environment variable for OPA server IP, fallback to public IP
-OPA_SERVER_IP = os.environ.get('OPA_SERVER_IP', '3.95.158.207')  # Replace with your EC2 public IP
+OPA_SERVER_IP = os.environ.get('OPA_SERVER_IP', '13.127.112.150') # Fallback if env var is missing
 OPA_PORT = os.environ.get('OPA_PORT', '8181')
 
 OPA_URL_SSE = f"http://{OPA_SERVER_IP}:{OPA_PORT}/v1/data/aws/s3_creation/deny"
@@ -95,8 +95,8 @@ def parse_opa_response(response_data: Dict[str, Any]) -> Optional[Dict[str, str]
         risk = "Critical"
     
     if risk == "Public":
-        print("[INFO] Bucket is public, no finding will be generated as per policy.")
-        return None
+        print("[INFO] Bucket is public, escalated to CRITICAL finding.")
+        risk = "Critical"
         
     return {
         "risk_level": risk,

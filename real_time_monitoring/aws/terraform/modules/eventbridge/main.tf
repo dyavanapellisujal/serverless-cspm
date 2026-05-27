@@ -4,11 +4,24 @@ resource "aws_cloudwatch_event_rule" "s3_bucket_creation" {
   description = "Trigger when S3 bucket is created"
 
   event_pattern = jsonencode({
-    source      = ["aws.s3"]
+    source      = ["aws.s3", "aws.ec2"]
     detail-type = ["AWS API Call via CloudTrail"]
     detail = {
-      eventSource = ["s3.amazonaws.com"]
-      eventName   = ["CreateBucket"]
+      eventSource = ["s3.amazonaws.com", "ec2.amazonaws.com"]
+      eventName   = [
+        "CreateBucket",
+        "PutBucketAcl",
+        "PutBucketPolicy",
+        "PutBucketEncryption",
+        "PutBucketVersioning",
+        "PutBucketPublicAccessBlock",
+        "DeleteBucketPublicAccessBlock",
+        "DeleteBucketPolicy",
+        "DeleteBucket",
+        "AuthorizeSecurityGroupIngress",
+        "RevokeSecurityGroupIngress",
+        "DeleteSecurityGroup"
+      ]
     }
   })
 

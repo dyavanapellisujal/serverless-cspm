@@ -1,12 +1,9 @@
 package aws.s3_kms_audit
 
-default deny := false
+import rego.v1
 
 # Rule for S3 buckets using KMS encryption with security issues
-deny := {
-    "risk_level": risk,
-    "reason": reason
-} if {
+deny contains {"risk_level": risk, "reason": reason} if {
     input.resource_type == "s3"
     is_kms_encrypted(input.bucket_config.encryption)
     
@@ -19,43 +16,38 @@ deny := {
 }
 
 # Rule for S3 buckets with KMS encryption but missing confidentiality context
-deny := {
-    "risk_level": "Critical",
-    "reason": "S3 bucket uses KMS encryption but lacks proper confidentiality tagging"
-} if {
+deny contains {"risk_level": "Critical", "reason": "S3 bucket uses KMS encryption but lacks proper confidentiality tagging"} if {
     input.resource_type == "s3"
     is_kms_encrypted(input.bucket_config.encryption)
     has_confidentiality_tag(input.bucket_config.tagset) == false
 }
 
 # Rule for S3 buckets with KMS encryption and public access
-deny := {
-    "risk_level": "Critical",
-    "reason": "S3 bucket with KMS encryption allows public access"
-} if {
+deny contains {"risk_level": "Critical", "reason": "S3 bucket with KMS encryption allows public access"} if {
     input.resource_type == "s3"
     is_kms_encrypted(input.bucket_config.encryption)
     is_bucket_publicly_accessible(input.bucket_config)
 }
 
 # Rule for S3 buckets with KMS encryption but no versioning
-deny := {
-    "risk_level": "Medium",
-    "reason": "S3 bucket with KMS encryption should have versioning enabled for data protection"
-} if {
+deny contains {"risk_level": "Medium", "reason": "S3 bucket with KMS encryption should have versioning enabled for data protection"} if {
     input.resource_type == "s3"
     is_kms_encrypted(input.bucket_config.encryption)
     input.bucket_config.versioning.status != "Enabled"
 }
 
 # Rule for S3 buckets with KMS encryption but no access logging
-deny := {
-    "risk_level": "Medium",
-    "reason": "S3 bucket with KMS encryption should have access logging enabled for audit trails"
-} if {
+deny contains {"risk_level": "Medium", "reason": "S3 bucket with KMS encryption should have access logging enabled for audit trails"} if {
     input.resource_type == "s3"
     is_kms_encrypted(input.bucket_config.encryption)
     input.bucket_config.logging.status == "disabled"
+}
+
+# Rule for specific KMS key security issues
+deny contains {"risk_level": "Critical", "reason": "S3 bucket uses KMS key with security vulnerabilities"} if {
+    input.resource_type == "s3"
+    is_kms_encrypted(input.bucket_config.encryption)
+    input.bucket_config.encryption.kms_security_status == "insecure kms key"
 }
 
 # Helper function to check if bucket uses KMS encryption
@@ -123,14 +115,4 @@ has_confidentiality_tag(tags) if {
 get_kms_key_id(encryption_config) := key_id if {
     encryption_config.sse_algorithm == "aws:kms"
     key_id := encryption_config.kms_master_key_id
-}
-
-# Rule for specific KMS key security issues (if KMS audit data is available)
-deny := {
-    "risk_level": "Critical",
-    "reason": "S3 bucket uses KMS key with security vulnerabilities"
-} if {
-    input.resource_type == "s3"
-    is_kms_encrypted(input.bucket_config.encryption)
-    input.bucket_config.encryption.kms_security_status == "insecure kms key"
 }

@@ -1,19 +1,19 @@
 variable "kms_lambda_zip_path" {
   description = "Path to the KMS Lambda deployment zip file"
   type        = string
-  default     = "C:/Users/Rahul/Cloud&Security/CSPM/real_time_monitoring/aws/lambda_deployment/kms_lambda.zip"
+  default     = "../lambda_deployment/kms_lambda.zip"
 }
 
 variable "s3_lambda_zip_path" {
   description = "Path to the S3 Lambda deployment zip file"
   type        = string
-  default     = "C:/Users/Rahul/Cloud&Security/CSPM/real_time_monitoring/aws/lambda_deployment/s3_lambda.zip"
+  default     = "../lambda_deployment/s3_lambda.zip"
 }
 
 variable "runtime" {
   description = "Lambda runtime version"
   type        = string
-  default     = "python3.9"
+  default     = "python3.12"
 }
 
 variable "opa_server_ip" {

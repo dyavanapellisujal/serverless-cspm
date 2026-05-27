@@ -5,368 +5,244 @@ import {
   Card,
   CardContent,
   Typography,
-  TextField,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
-  Chip,
-  IconButton,
-  Alert,
+  Button,
   CircularProgress,
 } from '@mui/material';
-import {
-  DataGrid,
-  GridToolbarContainer,
-  GridToolbarExport,
-  GridToolbarFilterButton,
-  GridToolbarColumnsButton,
-} from '@mui/x-data-grid';
-// import SecurityIcon from '@mui/icons-material/Security';
-// import WarningIcon from '@mui/icons-material/Warning';
-// import ErrorIcon from '@mui/icons-material/Error';
-// import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-// import VisibilityIcon from '@mui/icons-material/Visibility';
+import SecurityIcon from '@mui/icons-material/Security';
+import WarningIcon from '@mui/icons-material/Warning';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import GppGoodIcon from '@mui/icons-material/GppGood';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+const mockTrendData = [
+  { name: 'Day 1', findings: 4 },
+  { name: 'Day 5', findings: 7 },
+  { name: 'Day 10', findings: 12 },
+  { name: 'Day 15', findings: 8 },
+  { name: 'Day 20', findings: 15 },
+  { name: 'Day 25', findings: 10 },
+  { name: 'Present', findings: 18 },
+];
+
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [findings, setFindings] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [filters, setFilters] = useState({
-    severity: '',
-    service: '',
-    status: '',
-    search: '',
-  });
-  const [pagination, setPagination] = useState({
-    page: 0,
-    pageSize: 10,
-    total: 0,
-  });
-
-  // Fetch dashboard statistics
-  const fetchStats = async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/stats`);
-      setStats(response.data);
-    } catch (err) {
-      console.error('Error fetching stats:', err);
-    }
-  };
-
-  // Fetch findings with filters and pagination
-  const fetchFindings = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams({
-        page: pagination.page + 1,
-        limit: pagination.pageSize,
-        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v)),
-      });
-
-      const response = await axios.get(`${API_BASE_URL}/findings?${params}`);
-      setFindings(response.data.findings);
-      setPagination(prev => ({
-        ...prev,
-        total: response.data.pagination.total,
-      }));
-      setError(null);
-    } catch (err) {
-      setError('Failed to fetch findings. Please check if the backend server is running.');
-      console.error('Error fetching findings:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [recentFindings, setRecentFindings] = useState([]);
+  
+  // Dynamic data based on stats
+  const trendData = stats?.total_findings > 0 ? [
+    ...mockTrendData.slice(0, -1),
+    { name: 'Present', findings: stats.total_findings }
+  ] : mockTrendData;
 
   useEffect(() => {
-    fetchStats();
-    fetchFindings();
-  }, [pagination.page, pagination.pageSize, filters]);
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        const [statsRes, findingsRes] = await Promise.all([
+          axios.get(`${API_BASE_URL}/stats`),
+          axios.get(`${API_BASE_URL}/findings?limit=5`)
+        ]);
+        setStats(statsRes.data);
+        setRecentFindings(findingsRes.data.findings || []);
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDashboardData();
+  }, []);
+  
+  const complianceScore = stats?.total_findings > 0 
+    ? Math.round(((stats.status_distribution?.find(s => s._id === 'resolved')?.count || 0) / stats.total_findings) * 100)
+    : 100;
 
-  const getSeverityColor = (severity) => {
-    switch (severity?.toUpperCase()) {
-      case 'CRITICAL': return 'error';
-      case 'HIGH': return 'warning';
-      case 'MEDIUM': return 'info';
-      case 'LOW': return 'success';
-      default: return 'default';
-    }
+  const formatTime = (time) => {
+    if (!time) return '';
+    return new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'open': return 'error';
-      case 'in_progress': return 'warning';
-      case 'resolved': return 'success';
-      case 'false_positive': return 'default';
-      default: return 'default';
-    }
-  };
-
-  const columns = [
-    {
-      field: 'severity',
-      headerName: 'Severity',
-      width: 120,
-      renderCell: (params) => (
-        <Chip
-          label={params?.value || 'Unknown'}
-          color={getSeverityColor(params?.value)}
-          size="small"
-          variant="outlined"
-        />
-      ),
-    },
-    {
-      field: 'title',
-      headerName: 'Title',
-      width: 300,
-      flex: 1,
-    },
-    {
-      field: 'service',
-      headerName: 'Service',
-      width: 120,
-    },
-    {
-      field: 'resource_id',
-      headerName: 'Resource ID',
-      width: 200,
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      width: 120,
-      renderCell: (params) => (
-        <Chip
-          label={params?.value || 'Unknown'}
-          color={getStatusColor(params?.value)}
-          size="small"
-        />
-      ),
-    },
-    {
-      field: 'timestamp',
-      headerName: 'Detected',
-      width: 180,
-      valueFormatter: (params) => {
-        if (!params?.value) return 'N/A';
-        return new Date(params.value).toLocaleString();
-      },
-    },
-    {
-      field: 'actions',
-      headerName: 'Actions',
-      width: 100,
-      sortable: false,
-      renderCell: (params) => (
-        <IconButton
-          size="small"
-          onClick={() => navigate(`/finding/${params?.row?._id}`)}
-          title="View Details"
-        >
-          👁️
-        </IconButton>
-      ),
-    },
-  ];
-
-  const CustomToolbar = () => (
-    <GridToolbarContainer>
-      <GridToolbarColumnsButton />
-      <GridToolbarFilterButton />
-      <GridToolbarExport />
-    </GridToolbarContainer>
-  );
-
-  const StatCard = ({ title, value, icon, color = 'primary' }) => (
-    <Card sx={{ height: '100%' }}>
+  const StatCard = ({ title, value, icon, color }) => (
+    <Card className="glass-card" sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
       <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box>
-            <Typography color="textSecondary" gutterBottom variant="overline">
-              {title}
-            </Typography>
-            <Typography variant="h4" component="div">
-              {value || 0}
-            </Typography>
-          </Box>
-          <Box sx={{ color: `${color}.main` }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <Box sx={{
+            p: 1.5,
+            borderRadius: '12px',
+            bgcolor: `${color}15`,
+            color: color,
+            display: 'flex',
+            alignItems: 'center'
+          }}>
             {icon}
           </Box>
         </Box>
+        <Typography variant="h3" sx={{ fontWeight: 800, mb: 0.5 }}>
+          {value || 0}
+        </Typography>
+        <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+          {title}
+        </Typography>
       </CardContent>
     </Card>
   );
 
-  if (error) {
+  if (loading) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-        <Typography variant="body1">
-          Make sure the Flask backend server is running on http://localhost:5000
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+        <CircularProgress thickness={5} size={60} />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Security Findings Dashboard
-      </Typography>
+    <Box className="fade-in">
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" sx={{ color: 'text.primary', mb: 1 }}>
+          Security Posture Overview
+        </Typography>
+        <Typography variant="body1" sx={{ color: 'text.secondary' }}>
+          Real-time security monitoring for your cloud infrastructure.
+        </Typography>
+      </Box>
 
-      {/* Statistics Cards */}
+      {/* Hero Stats (Row 1) */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Total Findings"
             value={stats?.total_findings}
-            icon="🔒"
-            color="primary"
-          />
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Recent (7 days)"
-            value={stats?.recent_findings}
-            icon="⚠️"
-            color="warning"
+            icon={<SecurityIcon />}
+            color="#262626"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Critical Issues"
             value={stats?.severity_distribution?.find(s => s._id === 'CRITICAL')?.count}
-            icon="❌"
-            color="error"
+            icon={<ErrorOutlineIcon />}
+            color="#FF7F11"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title="Resolved"
+            title="Active Warnings"
+            value={stats?.severity_distribution?.find(s => s._id === 'HIGH')?.count}
+            icon={<WarningIcon />}
+            color="#E4A11B"
+          />
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <StatCard
+            title="Resolved Findings"
             value={stats?.status_distribution?.find(s => s._id === 'resolved')?.count}
-            icon="✅"
-            color="success"
+            icon={<CheckCircleOutlineIcon />}
+            color="#ACBFA4"
           />
         </Grid>
       </Grid>
 
-      {/* Filters */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Filters
-          </Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6} md={3}>
-              <TextField
-                fullWidth
-                label="Search"
-                value={filters.search || ''}
-                onChange={(e) => setFilters({ ...filters, search: e?.target?.value || '' })}
-                placeholder="Search findings..."
-              />
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <FormControl fullWidth>
-                <InputLabel>Severity</InputLabel>
-                <Select
-                  value={filters.severity || ''}
-                  label="Severity"
-                  onChange={(e) => setFilters({ ...filters, severity: e?.target?.value || '' })}
-                >
-                  <MenuItem value="">All</MenuItem>
-                  <MenuItem value="CRITICAL">Critical</MenuItem>
-                  <MenuItem value="HIGH">High</MenuItem>
-                  <MenuItem value="MEDIUM">Medium</MenuItem>
-                  <MenuItem value="LOW">Low</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <FormControl fullWidth>
-                <InputLabel>Service</InputLabel>
-                <Select
-                  value={filters.service || ''}
-                  label="Service"
-                  onChange={(e) => setFilters({ ...filters, service: e?.target?.value || '' })}
-                >
-                  <MenuItem value="">All</MenuItem>
-                  <MenuItem value="S3">S3</MenuItem>
-                  <MenuItem value="EC2">EC2</MenuItem>
-                  <MenuItem value="IAM">IAM</MenuItem>
-                  <MenuItem value="RDS">RDS</MenuItem>
-                  <MenuItem value="KMS">KMS</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6} md={3}>
-              <FormControl fullWidth>
-                <InputLabel>Status</InputLabel>
-                <Select
-                  value={filters.status || ''}
-                  label="Status"
-                  onChange={(e) => setFilters({ ...filters, status: e?.target?.value || '' })}
-                >
-                  <MenuItem value="">All</MenuItem>
-                  <MenuItem value="open">Open</MenuItem>
-                  <MenuItem value="in_progress">In Progress</MenuItem>
-                  <MenuItem value="resolved">Resolved</MenuItem>
-                  <MenuItem value="false_positive">False Positive</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
-
-      {/* Findings Table */}
-      <Card>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Security Findings
-          </Typography>
-          <Box sx={{ height: 600, width: '100%' }}>
-            <DataGrid
-              rows={findings}
-              columns={columns}
-              getRowId={(row) => row._id}
-              paginationMode="server"
-              rowCount={pagination.total}
-              page={pagination.page}
-              pageSize={pagination.pageSize}
-              onPageChange={(newPage) => setPagination(prev => ({ ...prev, page: newPage }))}
-              onPageSizeChange={(newPageSize) => setPagination(prev => ({ ...prev, pageSize: newPageSize }))}
-              loading={loading}
-              components={{
-                Toolbar: CustomToolbar,
-                LoadingOverlay: () => (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                    <CircularProgress />
+      {/* Main Content (Row 2) */}
+      <Grid container spacing={3}>
+        {/* Left: Affected Services */}
+        <Grid item xs={12} md={7}>
+          <Card className="glass-card" sx={{ height: '360px' }}>
+            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
+                Top Affected Services
+              </Typography>
+              <Box sx={{ mt: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                {stats?.service_distribution?.length > 0 ? stats.service_distribution.map((service, index) => (
+                  <Box key={index} sx={{ mb: 3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>{service._id}</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>{service.count}</Typography>
+                    </Box>
+                    <Box sx={{
+                      width: '100%',
+                      height: 10,
+                      bgcolor: 'rgba(0,0,0,0.05)',
+                      borderRadius: 5,
+                      overflow: 'hidden'
+                    }}>
+                      <Box sx={{
+                        width: `${(service.count / stats.total_findings) * 100}%`,
+                        height: '100%',
+                        bgcolor: index === 0 ? '#FF7F11' : '#ACBFA4',
+                        transition: 'width 1s ease-in-out'
+                      }} />
+                    </Box>
                   </Box>
-                ),
-              }}
-              disableSelectionOnClick
-              sx={{
-                '& .MuiDataGrid-row:hover': {
-                  cursor: 'pointer',
-                },
-              }}
-              onRowClick={(params) => navigate(`/finding/${params.row._id}`)}
-            />
-          </Box>
-        </CardContent>
-      </Card>
+                )) : (
+                  <Typography variant="body2" color="textSecondary" align="center">
+                    No service data available.
+                  </Typography>
+                )}
+              </Box>
+              <Button
+                endIcon={<ArrowForwardIcon />}
+                onClick={() => navigate('/findings')}
+                sx={{ mt: 'auto', alignSelf: 'flex-start', fontWeight: 700 }}
+              >
+                View Detailed Inventory
+              </Button>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Right: Health Score Gauge */}
+        <Grid item xs={12} md={5}>
+          <Card className="glass-card" sx={{ height: '360px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
+              Overall Health Score
+            </Typography>
+            <Box sx={{ position: 'relative', display: 'inline-flex', my: 2 }}>
+              <CircularProgress
+                variant="determinate"
+                value={complianceScore}
+                size={180}
+                thickness={5}
+                sx={{ 
+                  color: complianceScore > 80 ? '#ACBFA4' : complianceScore > 50 ? '#E4A11B' : '#FF7F11',
+                  filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.1))'
+                }}
+              />
+              <Box
+                sx={{
+                  top: 0,
+                  left: 0,
+                  bottom: 0,
+                  right: 0,
+                  position: 'absolute',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'column'
+                }}
+              >
+                <Typography variant="h2" component="div" sx={{ fontWeight: 900, color: 'text.primary' }}>
+                  {complianceScore}%
+                </Typography>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', tracking: 1 }}>
+                  COMPLIANT
+                </Typography>
+              </Box>
+            </Box>
+            <Typography variant="body2" color="textSecondary" align="center" sx={{ mt: 2, maxWidth: '80%' }}>
+              {complianceScore === 100 
+                ? "Perfect posture! All cloud resources meet security baselines." 
+                : `Action required: ${100 - complianceScore}% of audited resources are currently non-compliant.`}
+            </Typography>
+          </Card>
+        </Grid>
+      </Grid>
     </Box>
   );
 };

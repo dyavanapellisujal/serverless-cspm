@@ -232,10 +232,19 @@ def audit_bucket_security(bucket_name, account_id, region, tagset=None, s3_clien
             kms_client = get_kms_client()
             kms_audit_result = kms_client.audit_kms_key_security(kms_key_id, account_id, region)
             if kms_audit_result:
-                # Extract the finding ID from KMS audit result
-                kms_finding_id = kms_audit_result["Findings"][0]["UserDefinedFields"]["FindingId"]
+                # 1. Extract the finding ID from KMS audit result
+                kms_finding = kms_audit_result["Findings"][0]
+                kms_finding_id = kms_finding["UserDefinedFields"]["FindingId"]
                 print(f"[DEBUG] >> KMS audit completed. Finding ID: {kms_finding_id}")
-                # Update S3 encryption config to indicate insecure KMS key
+                
+                # 2. Store a STANDALONE KMS finding so it shows up under the KMS filter
+                try:
+                    store_finding_to_mongodb(kms_audit_result, bucket_name=kms_key_id)
+                    print(f"[INFO] Stored standalone KMS finding for key: {kms_key_id}")
+                except Exception as mongo_err:
+                    print(f"[WARNING] Failed to store standalone KMS finding: {mongo_err}")
+
+                # 3. Update S3 encryption config to indicate insecure KMS key
                 s3_config["encryption"]["kms_security_status"] = "insecure kms key"
                 s3_config["encryption"]["linked_kms_finding_id"] = kms_finding_id
             else:
@@ -250,12 +259,19 @@ def audit_bucket_security(bucket_name, account_id, region, tagset=None, s3_clien
     
     # Determine which OPA endpoint to use based on encryption type
     use_kms_endpoint = False
-    encryption_config = s3_config.get("encryption")
-    if encryption_config and isinstance(encryption_config, str) and encryption_config.startswith("KMS-"):
+    encryption_config = s3_config.get("encryption", {})
+    
+    # Handle both dict and legacy string formats for robustness
+    if isinstance(encryption_config, dict):
+        if encryption_config.get("sse_algorithm") == "aws:kms" or encryption_config.get("kms_master_key_id"):
+            use_kms_endpoint = True
+    elif isinstance(encryption_config, str) and encryption_config.startswith("KMS-"):
         use_kms_endpoint = True
-        print(f"[DEBUG] >> Using KMS audit endpoint for KMS encryption: {encryption_config}")
+
+    if use_kms_endpoint:
+        print(f"[DEBUG] >> Using KMS-linked audit endpoint for encryption: {encryption_config}")
     else:
-        print(f"[DEBUG] >> Using SSE audit endpoint for encryption: {encryption_config}")
+        print(f"[DEBUG] >> Using standard SSE audit endpoint.")
     
     response_data = send_opa_request(s3_config, use_kms_endpoint)
     if response_data is None:
@@ -265,14 +281,29 @@ def audit_bucket_security(bucket_name, account_id, region, tagset=None, s3_clien
     # --- 3. Parse the OPA result ---
     print("[DEBUG] Step 3: Parsing OPA response...")
     finding_details = parse_opa_response(response_data)
-    if finding_details is None:
-        print(f"[INFO] No findings for bucket '{bucket_name}'. It is compliant.")
-        print("="*50 + "\n")
-        # Return KMS finding if it exists, even if S3 is compliant
-        return kms_audit_result
     
-    risk = finding_details["risk_level"]
-    reason = finding_details["reason"]
+    # Define professional severity labels
+    risk = "Informational"
+    reason = "No issues found"
+    
+    # If OPA doesn't find S3 issues, but we have a linked KMS finding, we should still report it!
+    if finding_details is None:
+        if kms_audit_result:
+            print(f"[INFO] S3 is compliant, but linked KMS key has issues. Proceeding with report.")
+            risk = "CRITICAL"
+            reason = "KMS SECURITY ALERT: Linked encryption key permits Public Access (Principal: *). Data is exposed to decryption risk."
+        else:
+            print(f"[INFO] No findings for bucket '{bucket_name}'. It is compliant.")
+            print("="*50 + "\n")
+            return None
+    else:
+        risk = finding_details["risk_level"].upper()
+        reason = finding_details["reason"]
+        
+        # Override reason if KMS issues are found to make them the primary focus
+        if kms_audit_result:
+            risk = "CRITICAL" # Escalate to critical if key is public
+            reason = f"KMS SECURITY ALERT: Linked encryption key is publicly accessible! | (Internal bucket issues: {reason})"
 
     # --- 4. Generate comprehensive finding ---
     print("[DEBUG] Step 4: Generating comprehensive security finding...")
@@ -281,39 +312,7 @@ def audit_bucket_security(bucket_name, account_id, region, tagset=None, s3_clien
     finding_id = calculate_md5(finding_id_source)
     finding_timestamp = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
     
-    # Create detailed description with security configuration summary
-    security_summary = []
-    encryption_config = s3_config.get("encryption")
-    if not encryption_config:
-        security_summary.append("No encryption")
-    elif isinstance(encryption_config, str):
-        # Handle string format
-        if encryption_config == "AES256":
-            security_summary.append("SSE-S3 encryption only")
-        elif encryption_config.startswith("KMS-"):
-            security_summary.append("KMS encryption")
-        elif encryption_config == "none":
-            security_summary.append("No encryption")
-    elif isinstance(encryption_config, dict):
-        # Handle dict format
-        if encryption_config.get("sse_algorithm") == "AES256":
-            security_summary.append("SSE-S3 encryption only")
-        elif encryption_config.get("kms_security_status") == "insecure kms key":
-            security_summary.append("Insecure KMS key encryption")
-    
-    if s3_config.get("public_access_block", {}).get("block_public_acls") == False:
-        security_summary.append("Public ACLs allowed")
-    
-    if s3_config.get("versioning", {}).get("status") != "Enabled":
-        security_summary.append("Versioning disabled")
-    
-    if s3_config.get("logging", {}).get("status") == "disabled":
-        security_summary.append("Access logging disabled")
-    
-    description = f"S3 bucket '{bucket_name}' has security configuration issues. "
-    if security_summary:
-        description += f"Issues found: {', '.join(security_summary)}. "
-    description += f"Policy evaluation reason: {reason}"
+    description = f"Cloud Security Alert: {reason}"
     
     # Prepare user defined fields
     user_defined_fields = {

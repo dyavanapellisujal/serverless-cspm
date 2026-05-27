@@ -22,20 +22,41 @@ import {
   ListItem,
   ListItemText,
   ListItemIcon,
+  TextField,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SecurityIcon from '@mui/icons-material/Security';
 import CloudIcon from '@mui/icons-material/Cloud';
-import ScheduleIcon from '@mui/icons-material/Schedule';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
 import ErrorIcon from '@mui/icons-material/Error';
 import InfoIcon from '@mui/icons-material/Info';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:5000/api';
+
+const formatISTDate = (dateVal) => {
+    if (!dateVal) return 'N/A';
+    try {
+        let dateStr = String(dateVal);
+        if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+            dateStr += 'Z';
+        }
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return 'Invalid Date';
+        // Force IST interpretation
+        return d.toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+        }).toUpperCase() + ' IST';
+    } catch (e) {
+        return 'Invalid Date';
+    }
+};
 
 const FindingDetail = () => {
   const { id } = useParams();
@@ -45,6 +66,10 @@ const FindingDetail = () => {
   const [error, setError] = useState(null);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState('');
+  const [remediateDialogOpen, setRemediateDialogOpen] = useState(false);
+  const [remediateConfirm, setRemediateConfirm] = useState('');
+  const [remediating, setRemediating] = useState(false);
+  const [remediationError, setRemediationError] = useState(null);
 
   useEffect(() => {
     fetchFinding();
@@ -74,6 +99,29 @@ const FindingDetail = () => {
       setStatusDialogOpen(false);
     } catch (err) {
       console.error('Error updating status:', err);
+    }
+  };
+  
+  const handleRemediate = async () => {
+    if (remediateConfirm !== 'DELETE') {
+      setRemediationError('Please type DELETE to confirm.');
+      return;
+    }
+    
+    try {
+      setRemediating(true);
+      setRemediationError(null);
+      const response = await axios.post(`${API_BASE_URL}/findings/${id}/remediate`, {
+        confirmation: remediateConfirm
+      });
+      // If successful, the finding is moved to logs. Redirect to logs or home.
+      setRemediateDialogOpen(false);
+      navigate('/reports?bucket=' + (finding.resource_name || finding.bucket_name || finding.resource_id) + '&deleted=true');
+    } catch (err) {
+      setRemediationError(err.response?.data?.error || 'Failed to remediate resource.');
+      console.error('Remediation error:', err);
+    } finally {
+      setRemediating(false);
     }
   };
 
@@ -109,7 +157,7 @@ const FindingDetail = () => {
 
   const getRecommendations = (finding) => {
     const recommendations = [];
-    
+
     if (finding?.service === 'S3') {
       if (finding?.title?.includes('public')) {
         recommendations.push({
@@ -130,8 +178,14 @@ const FindingDetail = () => {
           priority: 'High',
         });
       }
+      // Added per user request: delete option
+      recommendations.push({
+        title: 'Remediate: Delete S3 Bucket',
+        description: 'The most effective way to eliminate risk for unauthorized resources is to completely delete the bucket and its contents.',
+        priority: 'Critical',
+      });
     }
-    
+
     if (finding?.service === 'EC2') {
       recommendations.push({
         title: 'Review Security Groups',
@@ -139,12 +193,12 @@ const FindingDetail = () => {
         priority: 'High',
       });
       recommendations.push({
-        title: 'Enable VPC Flow Logs',
-        description: 'Enable VPC Flow Logs to monitor network traffic.',
-        priority: 'Medium',
+        title: 'Remediate: Terminate Instance',
+        description: 'If the instance is compromised or unauthorized, terminate it immediately to prevent lateral movement.',
+        priority: 'Critical',
       });
     }
-    
+
     if (finding?.service === 'IAM') {
       recommendations.push({
         title: 'Apply Least Privilege',
@@ -152,12 +206,20 @@ const FindingDetail = () => {
         priority: 'High',
       });
       recommendations.push({
-        title: 'Enable MFA',
-        description: 'Require multi-factor authentication for sensitive operations.',
-        priority: 'High',
+        title: 'Remediate: Delete IAM Entity',
+        description: 'Delete unauthorized IAM users, groups, or roles to prevent unauthorized access to your cloud environment.',
+        priority: 'Critical',
       });
     }
-    
+
+    if (finding?.service === 'KMS') {
+      recommendations.push({
+        title: 'Remediate: Schedule Key Deletion',
+        description: 'If a KMS key is insecure or exposed, schedule it for deletion to prevent its further use.',
+        priority: 'Critical',
+      });
+    }
+
     // Default recommendations if none specific
     if (recommendations.length === 0) {
       recommendations.push({
@@ -171,7 +233,7 @@ const FindingDetail = () => {
         priority: 'Low',
       });
     }
-    
+
     return recommendations;
   };
 
@@ -250,7 +312,7 @@ const FindingDetail = () => {
                   {finding.title}
                 </Typography>
               </Box>
-              
+
               <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
                 <Chip
                   label={finding.severity}
@@ -269,7 +331,8 @@ const FindingDetail = () => {
               </Box>
 
               <Typography variant="body1" paragraph>
-                {finding.description}
+                <strong>Security Alert:</strong> {finding.description} <br /><br />
+                <em>Note: This configuration was detected in near real-time. Unrestricted or misconfigured access policies expose your infrastructure to severe risks including data exfiltration, unauthorized privilege escalation, or unauthorized network ingress.</em>
               </Typography>
 
               <Divider sx={{ my: 2 }} />
@@ -280,7 +343,7 @@ const FindingDetail = () => {
                     Resource ID
                   </Typography>
                   <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                    {finding.resource_id}
+                    {finding.resource_name || finding.bucket_name || finding.resource_id}
                   </Typography>
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -304,9 +367,19 @@ const FindingDetail = () => {
                     Detected At
                   </Typography>
                   <Typography variant="body2">
-                    {new Date(finding.timestamp).toLocaleString()}
+                    {formatISTDate(finding.timestamp || finding.deleted_at)}
                   </Typography>
                 </Grid>
+                {finding.is_archived_log && finding.deleted_at && (
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="subtitle2" color="error">
+                      Deletion / Remediation Time
+                    </Typography>
+                    <Typography variant="body2" color="error">
+                      {formatISTDate(finding.deleted_at)}
+                    </Typography>
+                  </Grid>
+                )}
               </Grid>
 
               {finding.details && (
@@ -315,8 +388,8 @@ const FindingDetail = () => {
                   <Typography variant="h6" gutterBottom>
                     Additional Details
                   </Typography>
-                  <Box sx={{ backgroundColor: '#f5f5f5', p: 2, borderRadius: 1 }}>
-                    <pre style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>
+                  <Box sx={{ backgroundColor: 'rgba(172, 191, 164, 0.1)', p: 2, borderRadius: 2, border: '1px solid rgba(172, 191, 164, 0.2)' }}>
+                    <pre style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap', color: '#262626' }}>
                       {JSON.stringify(finding.details, null, 2)}
                     </pre>
                   </Box>
@@ -334,7 +407,7 @@ const FindingDetail = () => {
                 <AssignmentIcon />
                 Security Recommendations
               </Typography>
-              
+
               <List>
                 {recommendations.map((rec, index) => (
                   <ListItem key={index} sx={{ px: 0 }}>
@@ -372,16 +445,19 @@ const FindingDetail = () => {
                   View in AWS Console
                 </Button>
                 <Button
-                  variant="outlined"
-                  startIcon={<ScheduleIcon />}
+                  variant="contained"
+                  color="error"
+                  startIcon={<DeleteOutlineIcon />}
                   fullWidth
+                  onClick={() => setRemediateDialogOpen(true)}
                 >
-                  Schedule Remediation
+                  Remediate (Delete)
                 </Button>
                 <Button
                   variant="outlined"
                   startIcon={<AssignmentIcon />}
                   fullWidth
+                  onClick={() => navigate(`/reports?finding_id=${id}`)}
                 >
                   Generate Report
                 </Button>
@@ -413,6 +489,61 @@ const FindingDetail = () => {
           <Button onClick={() => setStatusDialogOpen(false)}>Cancel</Button>
           <Button onClick={updateStatus} variant="contained">
             Update
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Remediation Dialog */}
+      <Dialog 
+        open={remediateDialogOpen} 
+        onClose={() => !remediating && setRemediateDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon /> Confirm Destructive Remediation
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            You are about to perform a <strong>DESTRUCTIVE</strong> action. 
+            This will attempt to delete or terminate the resource: 
+            <Box component="span" sx={{ fontFamily: 'monospace', mx: 1, p: 0.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+              {finding.resource_name || finding.bucket_name || finding.resource_id}
+            </Box>
+          </Typography>
+          
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            This action cannot be undone. All data within the resource will be lost. 
+            The finding will be archived in the logs once the action is complete.
+          </Alert>
+          
+          <Typography variant="body2" gutterBottom>
+            To confirm this action, please type <strong>DELETE</strong> below:
+          </Typography>
+          
+          <TextField
+            fullWidth
+            size="small"
+            value={remediateConfirm}
+            onChange={(e) => setRemediateConfirm(e.target.value)}
+            placeholder="Type DELETE here"
+            error={!!remediationError}
+            helperText={remediationError}
+            disabled={remediating}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemediateDialogOpen(false)} disabled={remediating}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleRemediate} 
+            variant="contained" 
+            color="error"
+            disabled={remediating || remediateConfirm !== 'DELETE'}
+            startIcon={remediating ? <CircularProgress size={20} color="inherit" /> : <DeleteOutlineIcon />}
+          >
+            {remediating ? 'Processing...' : 'Delete Resource'}
           </Button>
         </DialogActions>
       </Dialog>
